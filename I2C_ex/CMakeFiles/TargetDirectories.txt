@@ -1,0 +1,6 @@
+C:/Users/10che/Documents/STM32Projects/I2C_ex/CMakeFiles/I2C_ex.dir
+C:/Users/10che/Documents/STM32Projects/I2C_ex/CMakeFiles/edit_cache.dir
+C:/Users/10che/Documents/STM32Projects/I2C_ex/CMakeFiles/rebuild_cache.dir
+C:/Users/10che/Documents/STM32Projects/I2C_ex/cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir
+C:/Users/10che/Documents/STM32Projects/I2C_ex/cmake/stm32cubemx/CMakeFiles/edit_cache.dir
+C:/Users/10che/Documents/STM32Projects/I2C_ex/cmake/stm32cubemx/CMakeFiles/rebuild_cache.dir

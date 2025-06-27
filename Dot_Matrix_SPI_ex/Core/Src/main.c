@@ -130,19 +130,16 @@ int main(void) {
      *  이유를 정확히 알지 못했다.
      * ------------------------------------------------------------
      */
-    matrix_init(&hspi1);
+    LED_Matrix_Init(&hspi1);
     /* USER CODE END 2 */
 
     /* Infinite loop */
     /* USER CODE BEGIN WHILE */
-    write_matrix(&hspi1, LED_MATRIX_COORD(1, 1));
-    write_matrix(&hspi1, LED_MATRIX_COORD(2, 2));
-    write_matrix(&hspi1, LED_MATRIX_COORD(3, 3));
-    write_matrix(&hspi1, LED_MATRIX_COORD(4, 4));
-    write_matrix(&hspi1, LED_MATRIX_COORD(5, 4));
-    write_matrix(&hspi1, LED_MATRIX_COORD(6, 3));
-    write_matrix(&hspi1, LED_MATRIX_COORD(7, 2));
-    write_matrix(&hspi1, LED_MATRIX_COORD(8, 1));
+    LED_Matrix_Clear(&hspi1);
+    uint8_t matrix[8] = {0b11111111, 0b00000001, 0b00000001, 0b00000001,
+                         0b00000001, 0b11110001, 0b00000001, 0b00001111};
+
+    LED_Matrix_Print(&hspi1, matrix);
 
     while (1) {
         /* USER CODE END WHILE */

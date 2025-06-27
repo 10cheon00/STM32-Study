@@ -26,12 +26,12 @@
 #define LED_MATRIX_INTENSITY_VALUE(X) (MAX(0, MIN((2 * X - 1), 31)))
 
 #define LED_MATRIX_ROW_ADDRESS 0x0100
-#define LED_MATRIX_COLUMN_ADDRESS 0x0001
-#define LED_MATRIX_COORD(y, x)                                                 \
-    ((LED_MATRIX_ROW_ADDRESS * y) | (LED_MATRIX_COLUMN_ADDRESS << (x - 1)))
 
-void matrix_init(SPI_HandleTypeDef *hspi1);
+void LED_Matrix_Init(SPI_HandleTypeDef *hspi);
 
-void write_matrix(SPI_HandleTypeDef *hspi1, uint16_t data);
+void LED_Matrix_Clear(SPI_HandleTypeDef *hspi);
 
+void LED_Matrix_Send(SPI_HandleTypeDef *hspi, uint16_t data);
+
+void LED_Matrix_Print(SPI_HandleTypeDef *hspi, uint8_t *matrix);
 #endif /* _MATRIX_H_*/

@@ -1,4 +1,4 @@
-# 목적
+# 소개
 
 STM32F103RB를 사용하는 Nucleo-F103RB 보드를 사용해 [2020-2 임베디드시스템설계](https://www.youtube.com/playlist?list=PLP4rlEcTzeFI68k2A57nevWkL2Ono0IL3) 동영상 강의를 따라 배우고, 활용하면서 만들어본 여러 프로젝트를 보관하는 리포지토리입니다.
 

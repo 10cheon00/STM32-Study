@@ -49,24 +49,23 @@
  * 8 bit to 4 bit.
  */
 #define __LCD_CHANGE_TO_4BIT_OPERATION()                                       \
-    LCD_SendMessage(0x03, 0, 0, 1);                                            \
+    LCD_Send(0x03, 0, 0, 1);                                                   \
     HAL_Delay(5);                                                              \
-    LCD_SendMessage(0x03, 0, 0, 1);                                            \
+    LCD_Send(0x03, 0, 0, 1);                                                   \
     HAL_Delay(1);                                                              \
-    LCD_SendMessage(0x03, 0, 0, 1);                                            \
+    LCD_Send(0x03, 0, 0, 1);                                                   \
     HAL_Delay(1);                                                              \
-    LCD_SendMessage(0x02, 0, 0, 1);                                            \
+    LCD_Send(0x02, 0, 0, 1);                                                   \
     HAL_Delay(1);
 
 #define __LCD_SET_CURSOR_MOVE_RIGHT_AND_NO_DISPLAY_SHIFT()                     \
-    LCD_SendMessage(LCD_INSTRUCTION_ENTRY_MODE_SET |                           \
-                        LCD_INSTRUCTION_FLAG_INCREMENT |                       \
-                        LCD_INSTRUCTION_FLAG_NO_SHIFT,                         \
-                    0, 0, 1);                                                  \
+    LCD_Send(LCD_INSTRUCTION_ENTRY_MODE_SET | LCD_INSTRUCTION_FLAG_INCREMENT | \
+                 LCD_INSTRUCTION_FLAG_NO_SHIFT,                                \
+             0, 0, 1);                                                         \
     HAL_Delay(1);
 
 #define __LCD_SHOW_DISPLAY_AND_HIDE_CURSOR_AND_BLINK()                         \
-    LCD_SendMessage(                                                           \
+    LCD_Send(                                                                  \
         LCD_INSTRUCTION_DISPLAY_CONTROL | LCD_INSTRUCTION_FLAG_CURSOR_ON |     \
             LCD_INSTRUCTION_FLAG_DISPLAY_ON | LCD_INSTRUCTION_FLAG_BLINK_ON,   \
         0, 0, 1);                                                              \
@@ -78,10 +77,12 @@ extern I2C_HandleTypeDef hi2c1;
 
 void LCD_Init();
 
-void LCD_SendMessage(uint8_t cmd, uint8_t RS, uint8_t RW, uint8_t Backlight);
+void LCD_Send(uint8_t cmd, uint8_t RS, uint8_t RW, uint8_t Backlight);
 
-void LCD_WriteChar(uint8_t cmd);
+void LCD_Print(uint8_t str[2][17]);
 
-void LCD_Write(uint8_t str[2][17]);
+void LCD_PrintChar(uint8_t ch);
+
+void LCD_SetCursorPos(uint8_t line, uint8_t length);
 
 #endif /* __LCD_H */

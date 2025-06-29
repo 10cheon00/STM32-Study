@@ -50,9 +50,9 @@ UART_HandleTypeDef huart2;
 uint8_t success_msg[] = "SUCCESS\r\n";
 uint8_t error_msg[] = "ERROR\r\n";
 uint32_t address = 0x27;
-int i = 0;
-uint8_t str[2][17] = {"Potentiometer   ", "Value            "};
+int i, j;
 volatile uint32_t adc_value;
+uint32_t prev_adc_value;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -110,6 +110,8 @@ int main(void) {
     MX_ADC1_Init();
     /* USER CODE BEGIN 2 */
     LCD_Init();
+    uint8_t str[2][17] = {"Potentiometer   ", "Value           0"};
+    LCD_Print(str);
     /* USER CODE END 2 */
 
     /* Infinite loop */
@@ -119,17 +121,22 @@ int main(void) {
 
         /* USER CODE BEGIN 3 */
         // HAL_Delay(100);
-        if (adc_value > 0) {
-            uint32_t raw = adc_value;
+        if (adc_value > 0 && prev_adc_value != adc_value) {
+            uint32_t raw = (double)adc_value / 4095 * 100.0;
+            prev_adc_value = raw;
             uint8_t msg[18] = "VALUE : 00000000\r\n";
-            i = 15;
+            uint8_t value[4] = "  0";
+            i = 15, j = 2;
             while (raw > 0) {
-                msg[i] = '0' + raw % 10;
-                str[1][i--] = '0' + raw % 10;
+                msg[i--] = '0' + raw % 10;
+                value[j--] = '0' + raw % 10;
                 raw /= 10;
             }
             HAL_UART_Transmit(&huart2, msg, 18, 0xFF);
-            LCD_Write(str);
+            LCD_SetCursorPos(1, 13);
+            LCD_PrintChar(value[0]);
+            LCD_PrintChar(value[1]);
+            LCD_PrintChar(value[2]);
         }
     }
     /* USER CODE END 3 */

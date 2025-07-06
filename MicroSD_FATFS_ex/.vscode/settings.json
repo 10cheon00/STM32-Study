@@ -1,0 +1,16 @@
+{
+    "editor.defaultFormatter": "ms-vscode.cpptools",
+    "C_Cpp.clang_format_style": "{ BasedOnStyle: llvm,  IndentWidth: 4, TabWidth: 4, AlignConsecutiveAssignments: true, AlignConsecutiveDeclarations: true, AlignTrailingComments: true }",
+    "C_Cpp.commentContinuationPatterns": [ "/**" ],
+    "files.associations": {
+        "fatfs.h": "c",
+        "stdarg.h": "c",
+        "sd_card.h": "c",
+        "stm32f1xx_hal.h": "c",
+        "ff_gen_drv.h": "c",
+        "ff.h": "c",
+        "fatfs_sd.h": "c"
+    },
+    "STM32VSCodeExtension.cubeCLT.path": "C:\\ST\\STM32CubeCLT_1.18.0",
+    "STM32VSCodeExtension.projectCreator.executablePath": "c:\\Users\\10che\\AppData\\Local\\Programs\\STM32CubeMX\\STM32CubeMX.exe"
+}

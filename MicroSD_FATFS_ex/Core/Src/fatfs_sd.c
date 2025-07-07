@@ -6,109 +6,102 @@ static void SD_Select();
 static void SD_Deselect();
 static void SD_PowerOn();
 
-static SD_Response    SD_Send_Command(SD_Command_Type cmd, DWORD arg);
+static SD_Response    SD_Send_Command(SD_Command_Type cmd, uint32_t arg);
 static SD_Information SD_SPI_ReceiveInformation();
 static void           SD_SPI_Send(BYTE data);
 
 static SD_Version_Type   sd_version;
 extern volatile uint32_t Timer1, Timer2;
 
+/**
+ * SPI를 사용한 초기화 과정
+ * 
+ * https://www.dejazzer.com/ee379/lecture_notes/lec12_sd_card.pdf
+ * https://elm-chan.org/docs/mmc/mmc_e.html#spiinit
+ * https://onlinedocs.microchip.com/oxy/GUID-F9FE1ABC-D4DD-4988-87CE-2AFD74DEA334-en-US-3/GUID-48879CB2-9C60-4279-8B98-E17C499B12AF.html
+ */
 sd_status_t SD_Initialize(BYTE pdrv) {
     SD_Response    res;
     SD_Information info;
-
-    SD_PowerOn();
 
     hspi1.Init.BaudRatePrescaler =
         SPI_BAUDRATEPRESCALER_256; /* 예: 24 MHz /256 ≈ 94 kHz */
     HAL_SPI_Init(&hspi1);
 
-    SD_Select();
-    HAL_Delay(1);
-    // CMD0 실행
-    SD_SPI_Send(CMD0);
-    SD_SPI_Send(0);
-    SD_SPI_Send(0);
-    SD_SPI_Send(0);
-    SD_SPI_Send(0);
-    SD_SPI_Send(CMD0_CRC);
+    SD_PowerOn();
 
-    uint8_t  dummy = 0xFF;
-    uint32_t n     = 0x1FFF; // 왜??
+    sd_version = SD_TYPE_UNKNOWN;
 
-    res = 0;
-    while (res != 1 && n) {
-        HAL_SPI_TransmitReceive(&hspi1, &dummy, &res, 1, SD_SPI_TIMEOUT_MS);
-        n--;
+    res = SD_Send_Command(CMD0, 0);
+    if (SD_IS_ERROR_RESPONSE(res)) {
+        return SD_ERR_NO_INIT;
     }
-    if (res != 1 || n == 0) {
-        return SD_ERROR;
-    }
-    SD_Deselect();
-
-    // res = SD_Send_Command(CMD0, 0);
-    // if (SD_IS_ERROR_RESPONSE(res)) {
-    //     return SD_ERROR;
-    // }
 
     // CMD8 실행
-    res = SD_Send_Command(CMD8, 0x1AA);
+    res = SD_Send_Command(CMD8 | 0x40, 0x1AA);
 
     if (res == 1) {
         // Check Voltage
         info = SD_SPI_ReceiveInformation();
         if (info & 0x1AA) {
-            // APP Init
             Timer1 = 1000;
             do {
-                res = SD_Send_Command(CMD41, 1 << 30);
-            } while (Timer1 > 0 && res > 0);
+                // CMD55 for Leading ACMD
+                res = SD_Send_Command(CMD55, 0);
+                if (SD_IS_ERROR_RESPONSE(res)) {
+                    return SD_ERR_NO_INIT;
+                }
+                // APP Init
+                res = SD_Send_Command(ACMD41, 1 << 30);
+            } while (Timer1 > 0 && SD_IS_ERROR_RESPONSE(res));
             if (Timer1 <= 0) {
-                // todo: SD_ERROR만 반환하고 끝나는게 맞는가?
-                return SD_ERROR;
+                return SD_ERR_TIMEOUT;
             }
 
             // Read OCR
             res = SD_Send_Command(CMD58, 0);
             if (SD_IS_ERROR_RESPONSE(res)) {
-                // todo: SD_ERROR만 반환하고 끝나는게 맞는가?
-                return SD_ERROR;
-            }
-
-            if (res == 0) {
                 info = SD_SPI_ReceiveInformation();
                 // Check High capacity
                 if (info & 0x40) {
-                    sd_version = SD_V2_BLOCK_ADDRESS;
+                    sd_version = SD_TYPE_V2_BLOCK_ADDRESS;
                 } else {
-                    sd_version = SD_V2_BYTE_ADDRESS;
+                    sd_version = SD_TYPE_V2_BYTE_ADDRESS;
                 }
             } else {
-                sd_version = SD_V2_BYTE_ADDRESS;
+                sd_version = SD_TYPE_V2_BYTE_ADDRESS;
             }
+        } else {
+            sd_version = SD_TYPE_UNKNOWN;
         }
     } else {
-        do {
-            res = SD_Send_Command(CMD41, 0);
-        } while (res > 0);
+        // todo: 가지고 있는 SD카드가 하나라 이 분기 하위 코드들을
+        //  테스트 해볼 수 없었음.
+        
+        // CMD55 for Leading ACMD
+        res = SD_Send_Command(CMD55, 0);
+        if (SD_IS_ERROR_RESPONSE(res)) {
+            return SD_ERR_NO_INIT;
+        }
+        res = SD_Send_Command(ACMD41, 0);
 
-        if (res == 0) {
-            sd_version = SD_V1;
-        } else {
+        if (res & SD_RESPONSE_ILLEGAL_COMMAND) {
             Timer1 = 1000;
             do {
                 res = SD_Send_Command(CMD1, 0);
-            } while (Timer1 > 0 && res > 0);
+            } while (Timer1 > 0 && SD_IS_ERROR_RESPONSE(res));
             if (Timer1 <= 0) {
-                sd_version = SD_UNKNOWN;
+                sd_version = SD_TYPE_UNKNOWN;
             } else if (res == 0) {
-                sd_version = SD_MMC_V3;
+                sd_version = SD_TYPE_MMC_V3;
             }
+        } else {
+            sd_version = SD_TYPE_V1;
         }
     }
 
-    if (sd_version == SD_V2_BYTE_ADDRESS || sd_version == SD_V1 ||
-        sd_version == SD_MMC_V3) {
+    if (sd_version == SD_TYPE_V2_BYTE_ADDRESS || sd_version == SD_TYPE_V1 ||
+        sd_version == SD_TYPE_MMC_V3) {
         res = SD_Send_Command(CMD16, 512);
         if (res == 0) {
             // increate SPI Clock Speed...?
@@ -116,7 +109,7 @@ sd_status_t SD_Initialize(BYTE pdrv) {
                 SPI_BAUDRATEPRESCALER_4; /* 예: 24 MHz /256 ≈ 94 kHz */
             HAL_SPI_Init(&hspi1);
         } else {
-            sd_version = SD_UNKNOWN;
+            sd_version = SD_TYPE_UNKNOWN;
         }
     }
 
@@ -149,7 +142,7 @@ static void SD_PowerOn() {
     }
 }
 
-static SD_Response SD_Send_Command(SD_Command_Type cmd, DWORD arg) {
+static SD_Response SD_Send_Command(SD_Command_Type cmd, uint32_t arg) {
     uint8_t crc = 0x01;
 
     SD_Select();
@@ -160,6 +153,8 @@ static SD_Response SD_Send_Command(SD_Command_Type cmd, DWORD arg) {
         crc = CMD0_CRC;
     } else if (cmd == CMD8) {
         crc = CMD8_CRC;
+    } else if (cmd == CMD58) {
+        crc = CMD58_CRC;
     }
     SD_SPI_Send(cmd);
     SD_SPI_Send((BYTE)(arg >> 24));
@@ -205,6 +200,9 @@ static SD_Response SD_Send_Command(SD_Command_Type cmd, DWORD arg) {
 
     SD_Deselect();
 
+    // NCS
+    SD_SPI_Send(0xFF);
+
     return res;
 }
 
@@ -213,10 +211,14 @@ static SD_Information SD_SPI_ReceiveInformation() {
     SD_Response    res;
     SD_Information info = 0;
 
+    SD_Select();
     for (int i = 0; i < 4; i++) {
+        while (HAL_SPI_GetState(&hspi1) != HAL_SPI_STATE_READY)
+            ;
         HAL_SPI_TransmitReceive(&hspi1, &dummy, &res, 1, SD_SPI_TIMEOUT_MS);
         info = (info << 8) | res;
     }
+    SD_Deselect();
 
     return info;
 }

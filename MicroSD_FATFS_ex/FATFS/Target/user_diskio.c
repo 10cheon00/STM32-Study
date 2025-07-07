@@ -18,7 +18,6 @@
  */
 
 #include "fatfs_sd.h"
-#include <stdio.h>
 /* USER CODE END Header */
 
 #ifdef USE_OBSOLETE_USER_CODE_SECTION_0

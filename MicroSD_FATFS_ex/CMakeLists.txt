@@ -12,7 +12,6 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS ON)
 
-
 # Define the build type
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Debug")
@@ -67,4 +66,32 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
     stm32cubemx
 
     # Add user defined libraries
+)
+
+set(PROJECT_WARNING_FLAGS
+    -Wall
+    -Wextra
+    -Wpedantic
+    -Werror
+    -Wno-unused-parameter
+    -Wno-unused-variable
+    -Wno-unused-function
+    -Wno-unused-but-set-variable
+    -Wno-missing-field-initializers
+    -Wno-sign-compare
+    -Wno-implicit-fallthrough
+    -Wno-format
+    -Wno-format-extra-args
+    -Wno-format-security
+    -Wno-missing-prototypes
+)
+
+target_compile_options(
+    ${CMAKE_PROJECT_NAME} PRIVATE
+    ${PROJECT_WARNING_FLAGS}
+)
+
+target_compile_options(
+    FatFs PRIVATE
+    ${PROJECT_WARNING_FLAGS}
 )

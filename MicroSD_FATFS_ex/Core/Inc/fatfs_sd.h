@@ -9,49 +9,53 @@
 
 #define CMD0_CRC 0x95
 #define CMD8_CRC 0x87
+#define CMD58_CRC 0x75
+
+typedef uint8_t SD_Command_Type;
+
+#define CMD0 (0x40 + 0)
+#define CMD1 (0x40 + 1)
+#define ACMD41 (0x40 + 41)
+#define CMD8 (0x40 + 8)
+#define CMD12 (0x40 + 12)
+#define CMD16 (0x40 + 16)
+#define CMD17 (0x40 + 17)
+#define CMD18 (0x40 + 18)
+#define CMD24 (0x40 + 24)
+#define CMD25 (0x40 + 25)
+#define CMD55 (0x40 + 55)
+#define CMD58 (0x40 + 58)
 
 typedef enum {
-    CMD0  = 0x40 + 0,
-    CMD1  = 0x40 + 1,
-    CMD41 = 0x40 + 41,
-    CMD8  = 0x40 + 8,
-    CMD12 = 0x40 + 12,
-    CMD16 = 0x40 + 16,
-    CMD17 = 0x40 + 17,
-    CMD18 = 0x40 + 18,
-    CMD24 = 0x40 + 24,
-    CMD25 = 0x40 + 25,
-    CMD55 = 0x40 + 55,
-    CMD58 = 0x40 + 58
-} SD_Command_Type;
-
-typedef enum {
-    IN_IDLE_STATE        = 0x01,
-    ERASE_RESET          = 0x02,
-    ILLEGAL_COMMAND      = 0x04,
-    COMMAND_CRC_ERROR    = 0x08,
-    ERASE_SEQUENCE_ERROR = 0x10,
-    ADDRESS_ERROR        = 0x20,
-    PARAMETER_ERROR      = 0x40
+    SD_RESPONSE_SUCCESS              = 0x00,
+    SD_RESPONSE_IN_IDLE_STATE        = 0x01,
+    SD_RESPONSE_ERASE_RESET          = 0x02,
+    SD_RESPONSE_ILLEGAL_COMMAND      = 0x04,
+    SD_RESPONSE_COMMAND_CRC_ERROR    = 0x08,
+    SD_RESPONSE_ERASE_SEQUENCE_ERROR = 0x10,
+    SD_RESPONSE_ADDRESS_ERROR        = 0x20,
+    SD_RESPONSE_PARAMETER_ERROR      = 0x40
 } SD_Response_Error_Type;
 
-#define SD_IS_ERROR_RESPONSE(resp) (!(resp == IN_IDLE_STATE))
+#define SD_IS_ERROR_RESPONSE(resp)                                             \
+    (!(resp == SD_RESPONSE_IN_IDLE_STATE || resp == SD_RESPONSE_IN_IDLE_STATE))
 
 typedef uint8_t  SD_Response;
 typedef uint32_t SD_Information;
 
 typedef enum {
-    SD_V2_BLOCK_ADDRESS,
-    SD_V2_BYTE_ADDRESS,
-    SD_V1,
-    SD_MMC_V3,
-    SD_UNKNOWN
+    SD_TYPE_V2_BLOCK_ADDRESS,
+    SD_TYPE_V2_BYTE_ADDRESS,
+    SD_TYPE_V1,
+    SD_TYPE_MMC_V3,
+    SD_TYPE_UNKNOWN
 } SD_Version_Type;
 
 typedef enum {
     SD_OK = 0,
-    SD_ERROR,
+    SD_ERR_NO_INIT,
     SD_ERR_TIMEOUT,
+    SD_ERR_OCR_FAILED
 } sd_status_t;
 
 sd_status_t SD_Initialize(BYTE pdrv);

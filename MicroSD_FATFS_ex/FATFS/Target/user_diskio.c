@@ -80,7 +80,7 @@ USER_initialize(BYTE pdrv /* Physical drive nmuber to identify the drive */
 ) {
     /* USER CODE BEGIN INIT */
     sd_status_t status = SD_Initialize(pdrv);
-
+    SD_Version_Type version = SD_GetVersion();
     Stat = STA_NOINIT;
     return Stat;
     /* USER CODE END INIT */

@@ -60,6 +60,8 @@ typedef enum {
 
 sd_status_t SD_Initialize(BYTE pdrv);
 
+SD_Version_Type SD_GetVersion();
+
 void SD_Read(BYTE  pdrv,   /* Physical drive nmuber to identify the drive */
              BYTE *buff,   /* Data buffer to store read data */
              DWORD sector, /* Sector address in LBA */

@@ -10,5 +10,6 @@
         "ff_gen_drv.h": "c",
         "ff.h": "c",
         "fatfs_sd.h": "c"
-    }
+    },
+    "cortex-debug.variableUseNaturalFormat": false
 }

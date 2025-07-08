@@ -37,6 +37,8 @@
 /* Includes ------------------------------------------------------------------*/
 #include "ff_gen_drv.h"
 #include <string.h>
+#include "ff.h"      /* PARTITION 타입 정의 */
+#include "ffconf.h"  /* FF_VOLUMES 값 참조 */
 
 /* Private typedef -----------------------------------------------------------*/
 /* Private define ------------------------------------------------------------*/
@@ -79,10 +81,7 @@ DSTATUS
 USER_initialize(BYTE pdrv /* Physical drive nmuber to identify the drive */
 ) {
     /* USER CODE BEGIN INIT */
-    sd_status_t status = SD_Initialize(pdrv);
-    SD_Version_Type version = SD_GetVersion();
-    Stat = STA_NOINIT;
-    return Stat;
+    return SD_Initialize(pdrv);
     /* USER CODE END INIT */
 }
 
@@ -94,8 +93,7 @@ USER_initialize(BYTE pdrv /* Physical drive nmuber to identify the drive */
 DSTATUS USER_status(BYTE pdrv /* Physical drive number to identify the drive */
 ) {
     /* USER CODE BEGIN STATUS */
-    Stat = STA_NOINIT;
-    return Stat;
+    return SD_Status(pdrv);
     /* USER CODE END STATUS */
 }
 
@@ -113,8 +111,7 @@ DRESULT USER_read(BYTE  pdrv, /* Physical drive nmuber to identify the drive */
                   UINT  count   /* Number of sectors to read */
 ) {
     /* USER CODE BEGIN READ */
-    SD_Read(pdrv, buff, sector, count);
-    return RES_OK;
+    return SD_Read(pdrv, buff, sector, count);
     /* USER CODE END READ */
 }
 
@@ -152,8 +149,7 @@ DRESULT USER_ioctl(BYTE  pdrv, /* Physical drive nmuber (0..) */
                    void *buff  /* Buffer to send/receive control data */
 ) {
     /* USER CODE BEGIN IOCTL */
-    DRESULT res = RES_ERROR;
-    return res;
+    return SD_ioctl(pdrv, cmd, buff);
     /* USER CODE END IOCTL */
 }
 #endif /* _USE_IOCTL == 1 */

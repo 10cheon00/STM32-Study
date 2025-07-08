@@ -101,9 +101,27 @@ int main(void) {
     /* USER CODE BEGIN 2 */
     FATFS fs;
     FIL   fil;
+    uint8_t data[16];
+    UINT size;
 
-    FRESULT res = f_mount(&fs, "", 0);
-    f_open(&fil, "", FA_READ | FA_WRITE | FA_OPEN_ALWAYS);
+    FRESULT fresult = f_mount(&fs, "", 0);
+    if (fresult != FR_OK) {
+        Error_Handler();
+    }
+    fresult = f_open(&fil, "test.txt", FA_READ);
+    if (fresult != FR_OK) {
+        Error_Handler();
+    }
+    fresult = f_read(&fil, data, 16, &size);
+    if (fresult != FR_OK) {
+        Error_Handler();
+    }
+    HAL_UART_Transmit(&huart2, data, size, 0xFF);
+    fresult = f_close(&fil);
+    if (fresult != FR_OK) {
+        Error_Handler();
+    }
+    
     /* USER CODE END 2 */
 
     /* Infinite loop */
@@ -174,7 +192,7 @@ static void MX_SPI1_Init(void) {
     hspi1.Init.CLKPolarity       = SPI_POLARITY_LOW;
     hspi1.Init.CLKPhase          = SPI_PHASE_1EDGE;
     hspi1.Init.NSS               = SPI_NSS_SOFT;
-    hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_4;
+    hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_256;
     hspi1.Init.FirstBit          = SPI_FIRSTBIT_MSB;
     hspi1.Init.TIMode            = SPI_TIMODE_DISABLE;
     hspi1.Init.CRCCalculation    = SPI_CRCCALCULATION_DISABLE;

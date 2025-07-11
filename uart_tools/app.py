@@ -79,7 +79,7 @@ def main():
             if ser.in_waiting:
                 data = ser.read(ser.in_waiting)
                 try:
-                    print("수신:", data.decode('utf-8', errors='ignore').strip())
+                    print("수신:", data.decode('utf-8', errors='ignore').strip(), end='\r\n')
                 except:
                     print("수신 (raw):", data)
             time.sleep(0.1)

@@ -148,95 +148,6 @@ DSTATUS SD_Status(BYTE pdrv) { return status; }
 
 SD_Version_Type SD_GetVersion() { return sd_version; }
 
-DSTATUS SD_ioctl(BYTE pdrv, BYTE cmd, void *buff) {
-    SD_Response    r;
-    SD_Information csd[4];
-    DSTATUS        res = RES_OK;
-
-    if (cmd == CTRL_SYNC) {
-        /**
-         * 쓰기 작업이 끝날 때까지 기다리기. Busy Flag가 수신될 경우 다른 명령을
-         * 수행할 수 있다는 것을 의미?
-         * ---------------------------------------------------------------------
-         * Makes sure that the device has finished pending write process. If the
-         * disk I/O layer or storage device has a write-back cache, the dirty
-         * cache data must be committed to the medium immediately. Nothing to do
-         * for this command if each write operation to the medium is completed
-         * in the disk_write function.
-         * ---------------------------------------------------------------------
-         * It is an R1 response followed by busy flag (DO is driven to low as
-         * long as internal process is in progress). The host controller should
-         * wait for end of the process until DO goes high (a 0xFF is received).
-         */
-        uint8_t dummy = 0xFF;
-        Timer2        = 500;
-
-        do {
-            HAL_SPI_TransmitReceive(&hspi1, &dummy, &r, 1, SD_SPI_TIMEOUT_MS);
-        } while (Timer2 && r != 0xFF);
-        if (!Timer2) {
-            res = RES_ERROR;
-        }
-    } else if (cmd == GET_SECTOR_COUNT) {
-        /**
-         * sector에 대한 정보를 얻기 위해서는 레지스터를 조회해야한다.
-         * https://www.it-sd.com/articles/secure-digital-card-registers/
-         * https://www.farnell.com/datasheets/1683445.pdf
-         * 조회 가능한 주소를 의미하는 LBA(Logical Block Address)에 1을 더하면
-         * 조회 가능한 주소의 개수가 되겠다.
-         * CSD 레지스터 테이블을 보면 C_SIZE가 등장한다.
-         * device size = C_SIZE 22 xxxxxxh R [69:48]
-         * 메모리 크기를 구하는 방식은 다음과 같다.
-         * memory capacity = (C_SIZE+1) * 512K byte
-         *
-         * ---------------------------------------------------------------------
-         * Retrieves number of available sectors (the largest allowable LBA + 1)
-         * on the drive into the LBA_t variable that pointed by buff. This
-         * command is used by f_mkfs and f_fdisk function to determine the size
-         * of volume/partition to be created.
-         */
-        SD_Select();
-        r = SD_Send_Command(CMD9, 0);
-        if (r != SD_RESPONSE_SUCCESS) {
-            res = RES_ERROR;
-        } else {
-            // SD_SPI_ReceiveInformation(csd, 4);
-        }
-        SD_Deselect();
-
-        /**
-         * SD카드 버전 체크
-         * v2미만이면 크기가 ~2GB 이다.
-         * v2이상이면 크기가 2GB~ 이다.
-         * [127:126] 두 비트값이 버전을 의미한다. 0이면 1.0, 1이면 2.0이다.
-         */
-        if (SD_GET_CSD_STRUCTURE_VERSION(csd[0]) == SD_CSD_VERSION_2) {
-            DWORD count =
-                (SD_GET_SECTOR_COUNT_ON_CSD_VERSION_2(csd[1], csd[2]) + 1)
-                << 10; // << 10은 512를 곱하는 것
-            *(DWORD *)buff = count;
-        } else {
-            // todo: 용량이 2gb이하인 SD카드가 없어서 일단 미룸
-        }
-    } else if (cmd == GET_SECTOR_SIZE) {
-        /**
-         * ---------------------------------------------------------------------
-         * Retrieves sector size (minimum data unit for generic read/write) into
-         * the WORD variable that pointed by buff. Valid sector sizes are 512,
-         * 1024, 2048 and 4096. This command is required only if FF_MAX_SS >
-         * FF_MIN_SS. When FF_MAX_SS == FF_MIN_SS, this command will never be
-         * used and the disk_read and disk_write function must work in FF_MAX_SS
-         * bytes/sector.
-         */
-        *(WORD *)buff = 512; // 왜 512?
-    } else if (cmd == GET_BLOCK_SIZE) {
-        *(DWORD *)buff = 8;
-    } else {
-        res = RES_PARERR;
-    }
-    return res;
-}
-
 static void SD_PowerOn() {
     uint8_t res, dummy = 0xFF, n = 0xFF;
     /**
@@ -396,6 +307,104 @@ void SD_BusyWait() {
     } while ((res != 0xFF) && Timer2);
 }
 
+DSTATUS SD_ioctl(BYTE pdrv, BYTE cmd, void *buff) {
+    SD_Response    r;
+    SD_Information csd[4];
+    DSTATUS        res = RES_OK;
+
+    if (cmd == CTRL_SYNC) {
+        /**
+         * 지연 쓰기 방식을 사용한다면 일단 메모리에 변경된 내용을 갖고 있다가
+         * 파일을 닫을 때 한꺼번에 저장한다. jpa에서 영속성 컨텍스트와 같이
+         * 곧바로 디스크에 쓰기작업을 한다면 당연히 응답속도가 늦기 때문이다.
+         * 여기서는 파일을 닫을 때 쓰기 작업이 완료될 때까지 기다리는 용도로 쓰인다.
+         * ---------------------------------------------------------------------
+         * Makes sure that the device has finished pending write process. If the
+         * disk I/O layer or storage device has a write-back cache, the dirty
+         * cache data must be committed to the medium immediately. Nothing to do
+         * for this command if each write operation to the medium is completed
+         * in the disk_write function.
+         * ---------------------------------------------------------------------
+         * Make sure that no pending write process in the physical drive
+		 * if (disk_ioctl(fs->drv, CTRL_SYNC, 0) != RES_OK)
+		 *	   res = FR_DISK_ERR;
+         */
+        /**
+         * 0xFF가 수신된다면 busy flag가 끝난 것
+         * ---------------------------------------------------------------------
+         * It is an R1 response followed by busy flag (DO is driven to low as
+         * long as internal process is in progress). The host controller should
+         * wait for end of the process until DO goes high (a 0xFF is received).
+         */
+        uint8_t dummy = 0xFF;
+        Timer2        = 1000;
+
+        do {
+            HAL_SPI_TransmitReceive(&hspi1, &dummy, &r, 1, SD_SPI_TIMEOUT_MS);
+        } while (Timer2 && r != 0xFF);
+        if (!Timer2) {
+            res = RES_ERROR;
+        }
+    } else if (cmd == GET_SECTOR_COUNT) {
+        /**
+         * sector에 대한 정보를 얻기 위해서는 레지스터를 조회해야한다.
+         * https://www.it-sd.com/articles/secure-digital-card-registers/
+         * https://www.farnell.com/datasheets/1683445.pdf
+         * 조회 가능한 주소를 의미하는 LBA(Logical Block Address)에 1을 더하면
+         * 조회 가능한 주소의 개수가 되겠다.
+         * CSD 레지스터 테이블을 보면 C_SIZE가 등장한다.
+         * device size = C_SIZE 22 xxxxxxh R [69:48]
+         * 메모리 크기를 구하는 방식은 다음과 같다.
+         * memory capacity = (C_SIZE+1) * 512K byte
+         *
+         * ---------------------------------------------------------------------
+         * Retrieves number of available sectors (the largest allowable LBA + 1)
+         * on the drive into the LBA_t variable that pointed by buff. This
+         * command is used by f_mkfs and f_fdisk function to determine the size
+         * of volume/partition to be created.
+         */
+        SD_Select();
+        r = SD_Send_Command(CMD9, 0);
+        if (r != SD_RESPONSE_SUCCESS) {
+            res = RES_ERROR;
+        } else {
+            // SD_SPI_ReceiveInformation(csd, 4);
+        }
+        SD_Deselect();
+
+        /**
+         * SD카드 버전 체크
+         * v2미만이면 크기가 ~2GB 이다.
+         * v2이상이면 크기가 2GB~ 이다.
+         * [127:126] 두 비트값이 버전을 의미한다. 0이면 1.0, 1이면 2.0이다.
+         */
+        if (SD_GET_CSD_STRUCTURE_VERSION(csd[0]) == SD_CSD_VERSION_2) {
+            DWORD count =
+                (SD_GET_SECTOR_COUNT_ON_CSD_VERSION_2(csd[1], csd[2]) + 1)
+                << 10; // << 10은 512를 곱하는 것
+            *(DWORD *)buff = count;
+        } else {
+            // todo: 용량이 2gb이하인 SD카드가 없어서 일단 미룸
+        }
+    } else if (cmd == GET_SECTOR_SIZE) {
+        /**
+         * ---------------------------------------------------------------------
+         * Retrieves sector size (minimum data unit for generic read/write) into
+         * the WORD variable that pointed by buff. Valid sector sizes are 512,
+         * 1024, 2048 and 4096. This command is required only if FF_MAX_SS >
+         * FF_MIN_SS. When FF_MAX_SS == FF_MIN_SS, this command will never be
+         * used and the disk_read and disk_write function must work in FF_MAX_SS
+         * bytes/sector.
+         */
+        *(WORD *)buff = 512; // 왜 512?
+    } else if (cmd == GET_BLOCK_SIZE) {
+        *(DWORD *)buff = 8;
+    } else {
+        res = RES_PARERR;
+    }
+    return res;
+}
+
 DSTATUS SD_Read(BYTE pdrv, BYTE *buff, DWORD sector, UINT count) {
     /**
      * 명령 요청 후에는 항상 CmdResponse가 먼저 응답된다. 그 이후 DataPacket이
@@ -480,11 +489,13 @@ DSTATUS SD_Write(BYTE pdrv, const BYTE *buff, DWORD sector, UINT count) {
     SD_Response     res;
     uint8_t         dummy = 0xFF;
 
+    SD_Select();
     if (count == 1) {
         data_res = (SD_DataResponse)SD_Send_Command(CMD24, sector);
 
-        if (SD_IS_DATA_ACCEPTED(data_res)) {
+        if (data_res == 0) {
             /**
+             * 0. 더미 1바이트 전송
              * 1. 데이터 토큰 전송
              * 2. 데이터 블록 전송
              * 3. CRC 전송
@@ -492,26 +503,27 @@ DSTATUS SD_Write(BYTE pdrv, const BYTE *buff, DWORD sector, UINT count) {
              */
             uint8_t token = SD_DATA_TOKEN_CMD17_18_24;
             uint8_t crc   = 0xFF;
-            SD_Select();
+            HAL_SPI_Transmit(&hspi1, &crc, 1, SD_SPI_TIMEOUT_MS);
+
             HAL_SPI_Transmit(&hspi1, &token, 1, SD_SPI_TIMEOUT_MS);
 
             for (int i = 0; i < 512; i++) {
                 HAL_SPI_Transmit(&hspi1, buff++, 1, SD_SPI_TIMEOUT_MS);
             }
+            HAL_SPI_Transmit(&hspi1, &crc, 1, SD_SPI_TIMEOUT_MS);
+            HAL_SPI_Transmit(&hspi1, &crc, 1, SD_SPI_TIMEOUT_MS);
+
             HAL_SPI_TransmitReceive(&hspi1, &dummy, &data_res, 1,
                                     SD_SPI_TIMEOUT_MS);
             if (SD_IS_DATA_ACCEPTED(data_res)) {
-                HAL_SPI_Transmit(&hspi1, &crc, 1, SD_SPI_TIMEOUT_MS);
-                HAL_SPI_Transmit(&hspi1, &crc, 1, SD_SPI_TIMEOUT_MS);
-
                 do {
                     HAL_SPI_TransmitReceive(&hspi1, &dummy, &res, 1,
                                             SD_SPI_TIMEOUT_MS);
-                } while (res != 0);
+                } while (res != 0xFF);
             }
-            SD_Deselect();
         }
     } else {
     }
+    SD_Deselect();
     return RES_OK;
 }

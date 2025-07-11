@@ -131,7 +131,7 @@ DRESULT USER_write(BYTE pdrv, /* Physical drive nmuber to identify the drive */
 ) {
     /* USER CODE BEGIN WRITE */
     /* USER CODE HERE */
-    return RES_OK;
+    return SD_Write(pdrv, buff, sector, count);
     /* USER CODE END WRITE */
 }
 #endif /* _USE_WRITE == 1 */

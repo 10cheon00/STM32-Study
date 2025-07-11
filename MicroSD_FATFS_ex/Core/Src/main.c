@@ -23,6 +23,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <stdarg.h>
+#include <stdio.h>
 #include <string.h>
 /* USER CODE END Includes */
 
@@ -99,29 +100,37 @@ int main(void) {
     MX_USART2_UART_Init();
     MX_FATFS_Init();
     /* USER CODE BEGIN 2 */
-    FATFS fs;
-    FIL   fil;
-    uint8_t data[16];
-    UINT size;
+    FATFS   fs;
+    FIL     fil;
+    uint8_t buf[256];
+    UINT    size;
+    DIR     dir;
+    char    str[256] = "UART Start";
+    HAL_UART_Transmit(&huart2, (uint8_t *)str, strlen(str), 0xFF);
 
-    FRESULT fresult = f_mount(&fs, "", 0);
-    if (fresult != FR_OK) {
+    FRESULT fr = f_mount(&fs, "", 0);
+    if (fr != FR_OK) {
         Error_Handler();
     }
-    fresult = f_open(&fil, "test.txt", FA_READ);
-    if (fresult != FR_OK) {
+    fr = f_chdir("testdir");
+    fr = f_open(&fil, "hello.txt", FA_READ | FA_WRITE);
+    f_lseek(&fil, f_size(&fil));
+    f_puts("12340000", &fil);
+    /**
+     * 파일을 닫아야 버퍼에 남은 데이터들이 저장된다.
+     */
+    fr = f_close(&fil); 
+    if (fr != FR_OK) { 
         Error_Handler();
     }
-    fresult = f_read(&fil, data, 16, &size);
-    if (fresult != FR_OK) {
+    fr = f_open(&fil, "hello.txt", FA_READ | FA_WRITE);
+    f_gets((TCHAR *)buf, 256, &fil);
+    if (fr != FR_OK) {
         Error_Handler();
     }
-    HAL_UART_Transmit(&huart2, data, size, 0xFF);
-    fresult = f_close(&fil);
-    if (fresult != FR_OK) {
-        Error_Handler();
-    }
-    
+    f_mount(NULL, "", 1);
+    HAL_UART_Transmit(&huart2, (uint8_t *)buf, strlen((char *)buf), 0xFF);
+
     /* USER CODE END 2 */
 
     /* Infinite loop */

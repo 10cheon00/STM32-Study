@@ -5,9 +5,11 @@ static void SD_Select();
 static void SD_Deselect();
 
 static SD_Response SD_Send_Command(SD_Command_Type cmd, DWORD arg);
-static void        SD_SPI_ReceiveInformation(SD_Information *info);
+static void        SD_SPI_ReceiveInformation(SD_Information info);
 static void        SD_SPI_Send(BYTE data);
-static void        SD_BusyWait();
+static void        SD_SPI_SendReceive(BYTE request, BYTE *response);
+
+static bool SD_BusyWait();
 
 static DSTATUS           status;
 static SD_Version_Type   sd_version;
@@ -22,7 +24,7 @@ extern volatile uint32_t Timer1, Timer2;
  */
 DSTATUS SD_Initialize(BYTE pdrv) {
     SD_Response    res;
-    SD_Information info = 0;
+    SD_Information info;
 
     HAL_Delay(1);
     /**
@@ -31,9 +33,9 @@ DSTATUS SD_Initialize(BYTE pdrv) {
      * To ensure the proper operation of the SD card, the SD CLK signal should
      * have a frequency in the range of 100 to 400 kHz.
      */
-    // hspi1.Init.BaudRatePrescaler =
-    //     SPI_BAUDRATEPRESCALER_256; /* 예: 24 MHz /256 ≈ 94 kHz */
-    // HAL_SPI_Init(&hspi1);
+    hspi1.Init.BaudRatePrescaler =
+        SPI_BAUDRATEPRESCALER_256; /* 예: 24 MHz /256 ≈ 94 kHz */
+    HAL_SPI_Init(&hspi1);
 
     SD_PowerOn();
 
@@ -50,8 +52,8 @@ DSTATUS SD_Initialize(BYTE pdrv) {
 
     if (res == 1) {
         // Check Voltage
-        SD_SPI_ReceiveInformation(&info);
-        if (info & 0x1AA) {
+        SD_SPI_ReceiveInformation(info);
+        if (info[3] & 0x1AA) {
             Timer1 = 1000;
             do {
                 // CMD55 for Leading ACMD
@@ -69,10 +71,9 @@ DSTATUS SD_Initialize(BYTE pdrv) {
             // Read OCR
             res = SD_Send_Command(SD_CMD58, 0);
             if (res == 0) {
-                info = 0;
-                SD_SPI_ReceiveInformation(&info);
+                SD_SPI_ReceiveInformation(info);
                 // Check High capacity
-                if (info & (0x1 << 30)) {
+                if (info[0] & 0x40) {
                     sd_version = SD_TYPE_V2_BLOCK_ADDRESS;
                 } else {
                     sd_version = SD_TYPE_V2_BYTE_ADDRESS;
@@ -174,7 +175,7 @@ static void SD_PowerOn() {
      * the MISO line.
      */
     SD_Select();
-    SD_SPI_Send(SD_CMD0 | 0x40);
+    SD_SPI_Send(SD_CMD0);
     SD_SPI_Send(0);
     SD_SPI_Send(0);
     SD_SPI_Send(0);
@@ -266,8 +267,9 @@ SD_Response SD_Send_Command(SD_Command_Type cmd, DWORD arg) {
          * clock cycles after sending the reset command, the reset command has
          * to be sent again.
          */
-        HAL_SPI_TransmitReceive(&hspi1, &dummy, &res, 1, SD_SPI_TIMEOUT_MS);
-    } while ((res & 0x80) && --n);
+        SD_SPI_SendReceive(dummy, &res);
+        n--;
+    } while ((res & 0x80) && n > 0);
 
     return res;
 }
@@ -278,28 +280,22 @@ static void SD_SPI_Send(BYTE data) {
     HAL_SPI_Transmit(&hspi1, &data, 1, SD_SPI_TIMEOUT_MS);
 }
 
-static void SD_SPI_ReceiveInformation(SD_Information *info) {
+static void SD_SPI_SendReceive(BYTE request, BYTE *response) {
+    while (HAL_SPI_GetState(&hspi1) != HAL_SPI_STATE_READY)
+        ;
+    HAL_SPI_TransmitReceive(&hspi1, &request, response, 1, SD_SPI_TIMEOUT_MS);
+}
+
+static void SD_SPI_ReceiveInformation(SD_Information info) {
     /**
      * CMD8과 CMD55의 경우 58비트 응답이 오므로, R1 응답을 제외한 32비트 응답을
      * 받도록 처리하는 함수
      */
-    uint8_t     dummy = 0xFF;
-    SD_Response res;
+    uint8_t dummy = 0xFF;
 
-    for (int j = 0; j < 4; j++) {
-        while (HAL_SPI_GetState(&hspi1) != HAL_SPI_STATE_READY)
-            ;
-        HAL_SPI_TransmitReceive(&hspi1, &dummy, &res, 1, SD_SPI_TIMEOUT_MS);
-        *info = (*info << 8) | res;
+    for (int i = 0; i < 4; i++) {
+        SD_SPI_SendReceive(dummy, &info[i]);
     }
-}
-
-void SD_BusyWait() {
-    Timer2 = 500;
-    uint8_t res, dummy = 0xFF;
-    do {
-        HAL_SPI_TransmitReceive(&hspi1, &dummy, &res, 1, SD_SPI_TIMEOUT_MS);
-    } while ((res != 0xFF) && Timer2);
 }
 
 DSTATUS SD_Status(BYTE pdrv) { return status; }
@@ -307,16 +303,18 @@ DSTATUS SD_Status(BYTE pdrv) { return status; }
 SD_Version_Type SD_GetVersion() { return sd_version; }
 
 DSTATUS SD_ioctl(BYTE pdrv, BYTE cmd, void *buff) {
-    SD_Response    r;
-    SD_Information csd[4];
-    DSTATUS        res = RES_OK;
+    SD_Response r;
+    uint8_t     csd[32];
+    uint8_t     dummy = 0xFF;
+    DSTATUS     res   = RES_OK;
 
     if (cmd == CTRL_SYNC) {
         /**
          * 지연 쓰기 방식을 사용한다면 일단 메모리에 변경된 내용을 갖고 있다가
          * 파일을 닫을 때 한꺼번에 저장한다. jpa에서 영속성 컨텍스트와 같이
          * 곧바로 디스크에 쓰기작업을 한다면 당연히 응답속도가 늦기 때문이다.
-         * 여기서는 파일을 닫을 때 쓰기 작업이 완료될 때까지 기다리는 용도로 쓰인다.
+         * 여기서는 파일을 닫을 때 쓰기 작업이 완료될 때까지 기다리는 용도로
+         * 쓰인다.
          * ---------------------------------------------------------------------
          * Makes sure that the device has finished pending write process. If the
          * disk I/O layer or storage device has a write-back cache, the dirty
@@ -325,8 +323,8 @@ DSTATUS SD_ioctl(BYTE pdrv, BYTE cmd, void *buff) {
          * in the disk_write function.
          * ---------------------------------------------------------------------
          * Make sure that no pending write process in the physical drive
-		 * if (disk_ioctl(fs->drv, CTRL_SYNC, 0) != RES_OK)
-		 *	   res = FR_DISK_ERR;
+         * if (disk_ioctl(fs->drv, CTRL_SYNC, 0) != RES_OK)
+         *	   res = FR_DISK_ERR;
          */
         /**
          * 0xFF가 수신된다면 busy flag가 끝난 것
@@ -335,55 +333,10 @@ DSTATUS SD_ioctl(BYTE pdrv, BYTE cmd, void *buff) {
          * long as internal process is in progress). The host controller should
          * wait for end of the process until DO goes high (a 0xFF is received).
          */
-        uint8_t dummy = 0xFF;
-        Timer2        = 1000;
+        // Timer2 = 1000;
 
-        do {
-            HAL_SPI_TransmitReceive(&hspi1, &dummy, &r, 1, SD_SPI_TIMEOUT_MS);
-        } while (Timer2 && r != 0xFF);
-        if (!Timer2) {
+        if (!SD_BusyWait()) {
             res = RES_ERROR;
-        }
-    } else if (cmd == GET_SECTOR_COUNT) {
-        /**
-         * sector에 대한 정보를 얻기 위해서는 레지스터를 조회해야한다.
-         * https://www.it-sd.com/articles/secure-digital-card-registers/
-         * https://www.farnell.com/datasheets/1683445.pdf
-         * 조회 가능한 주소를 의미하는 LBA(Logical Block Address)에 1을 더하면
-         * 조회 가능한 주소의 개수가 되겠다.
-         * CSD 레지스터 테이블을 보면 C_SIZE가 등장한다.
-         * device size = C_SIZE 22 xxxxxxh R [69:48]
-         * 메모리 크기를 구하는 방식은 다음과 같다.
-         * memory capacity = (C_SIZE+1) * 512K byte
-         *
-         * ---------------------------------------------------------------------
-         * Retrieves number of available sectors (the largest allowable LBA + 1)
-         * on the drive into the LBA_t variable that pointed by buff. This
-         * command is used by f_mkfs and f_fdisk function to determine the size
-         * of volume/partition to be created.
-         */
-        SD_Select();
-        r = SD_Send_Command(SD_CMD9, 0);
-        if (r != SD_RESPONSE_OK) {
-            res = RES_ERROR;
-        } else {
-            // SD_SPI_ReceiveInformation(csd, 4);
-        }
-        SD_Deselect();
-
-        /**
-         * SD카드 버전 체크
-         * v2미만이면 크기가 ~2GB 이다.
-         * v2이상이면 크기가 2GB~ 이다.
-         * [127:126] 두 비트값이 버전을 의미한다. 0이면 1.0, 1이면 2.0이다.
-         */
-        if (SD_GET_CSD_STRUCTURE_VERSION(csd[0]) == SD_CSD_VERSION_2) {
-            DWORD count =
-                (SD_GET_SECTOR_COUNT_ON_CSD_VERSION_2(csd[1], csd[2]) + 1)
-                << 10; // << 10은 512를 곱하는 것
-            *(DWORD *)buff = count;
-        } else {
-            // todo: 용량이 2gb이하인 SD카드가 없어서 일단 미룸
         }
     } else if (cmd == GET_SECTOR_SIZE) {
         /**
@@ -418,7 +371,7 @@ DSTATUS SD_Read(BYTE pdrv, BYTE *buff, DWORD sector, UINT count) {
      */
     SD_DataToken token;
     SD_Response  res;
-    uint8_t      crc  = 0x01;
+    uint8_t      dummy = 0xFF, crc = 0x01;
     DWORD        addr = (sd_version == SD_TYPE_V2_BLOCK_ADDRESS)
                             ? sector        /* SDHC/SDXC: block address */
                             : sector * 512; /* SDSC: byte address */
@@ -441,10 +394,7 @@ DSTATUS SD_Read(BYTE pdrv, BYTE *buff, DWORD sector, UINT count) {
              */
             Timer1 = 200; // 타임아웃 200ms
             do {
-                while (HAL_SPI_GetState(&hspi1) != HAL_SPI_STATE_READY)
-                    ;
-                HAL_SPI_TransmitReceive(&hspi1, (uint8_t[]){0xFF}, &token, 1,
-                                        SD_SPI_TIMEOUT_MS);
+                SD_SPI_SendReceive(dummy, &token);
             } while (Timer1 && token == 0xFF);
             /**
              * 에러 토큰 검사
@@ -459,19 +409,14 @@ DSTATUS SD_Read(BYTE pdrv, BYTE *buff, DWORD sector, UINT count) {
              * Read DataBlock
              */
             for (UINT i = 0; i < 512; i++) {
-                while (HAL_SPI_GetState(&hspi1) != HAL_SPI_STATE_READY)
-                    ;
-                HAL_SPI_TransmitReceive(&hspi1, (uint8_t[]){0xFF}, &buff[i], 1,
-                                        SD_SPI_TIMEOUT_MS);
+                SD_SPI_SendReceive(dummy, &buff[i]);
             }
 
             /**
              * Read CRC, but skip
              */
-            HAL_SPI_TransmitReceive(&hspi1, (uint8_t[]){0xFF}, &crc, 1,
-                                    SD_SPI_TIMEOUT_MS);
-            HAL_SPI_TransmitReceive(&hspi1, (uint8_t[]){0xFF}, &crc, 1,
-                                    SD_SPI_TIMEOUT_MS);
+            SD_SPI_Send(crc);
+            SD_SPI_Send(crc);
 
             SD_Deselect();
         } else {
@@ -502,22 +447,20 @@ DSTATUS SD_Write(BYTE pdrv, const BYTE *buff, DWORD sector, UINT count) {
              */
             uint8_t token = SD_DATA_TOKEN_CMD17_18_24;
             uint8_t crc   = 0xFF;
-            HAL_SPI_Transmit(&hspi1, &crc, 1, SD_SPI_TIMEOUT_MS);
 
-            HAL_SPI_Transmit(&hspi1, &token, 1, SD_SPI_TIMEOUT_MS);
+            SD_SPI_Send(dummy);
+            SD_SPI_Send(token);
 
             for (int i = 0; i < 512; i++) {
-                HAL_SPI_Transmit(&hspi1, buff++, 1, SD_SPI_TIMEOUT_MS);
+                SD_SPI_Send(*(buff++));
             }
-            HAL_SPI_Transmit(&hspi1, &crc, 1, SD_SPI_TIMEOUT_MS);
-            HAL_SPI_Transmit(&hspi1, &crc, 1, SD_SPI_TIMEOUT_MS);
+            SD_SPI_Send(crc);
+            SD_SPI_Send(crc);
 
-            HAL_SPI_TransmitReceive(&hspi1, &dummy, &data_res, 1,
-                                    SD_SPI_TIMEOUT_MS);
+            SD_SPI_SendReceive(dummy, &data_res);
             if (SD_IS_DATA_ACCEPTED(data_res)) {
                 do {
-                    HAL_SPI_TransmitReceive(&hspi1, &dummy, &res, 1,
-                                            SD_SPI_TIMEOUT_MS);
+                    SD_SPI_SendReceive(dummy, &res);
                 } while (res != 0xFF);
             }
         }
@@ -525,4 +468,17 @@ DSTATUS SD_Write(BYTE pdrv, const BYTE *buff, DWORD sector, UINT count) {
     }
     SD_Deselect();
     return RES_OK;
+}
+
+bool SD_BusyWait() {
+    Timer2 = 500;
+    uint8_t res, dummy = 0xFF;
+    do {
+        SD_SPI_SendReceive(dummy, &res);
+    } while ((res != 0xFF) && Timer2);
+
+    if (!Timer2) {
+        return SD_ERROR;
+    }
+    return SD_OK;
 }

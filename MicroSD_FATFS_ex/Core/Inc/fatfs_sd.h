@@ -1,6 +1,8 @@
 #ifndef _FATFS_SD_H_
 #define _FATFS_SD_H_
 
+#include <stdbool.h>
+
 #include "diskio.h"
 #include "ff.h"
 
@@ -43,10 +45,10 @@ typedef enum {
     SD_RESPONSE_PARAMETER_ERROR      = 0x40
 } SD_Response_Error_Type;
 
-#define SD_SPI_TIMEOUT_MS 1000
+#define SD_SPI_TIMEOUT_MS 500
 
-typedef uint8_t  SD_Response;
-typedef uint32_t SD_Information;
+typedef uint8_t SD_Response;
+typedef uint8_t SD_Information[4];
 
 typedef enum {
     SD_TYPE_UNKNOWN,
@@ -93,5 +95,8 @@ typedef uint8_t SD_DataResponse;
 #define SD_IS_DATA_ACCEPTED(data_res) (data_res & 0x05)
 #define SD_IS_DATA_REJECTED_WITH_CRC_ERROR(data_res) (data_res == 0x0B)
 #define SD_IS_DATA_REJECTED_WITH_WRITE_ERROR(data_res) (data_res == 0x0C)
+
+#define SD_OK true
+#define SD_ERROR false
 
 #endif

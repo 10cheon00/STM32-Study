@@ -1,7 +1,5 @@
 #include "fatfs_sd.h"
 
-#define SD_SPI_TIMEOUT_MS 1000
-
 static void SD_PowerOn();
 static void SD_Select();
 static void SD_Deselect();
@@ -26,15 +24,16 @@ DSTATUS SD_Initialize(BYTE pdrv) {
     SD_Response    res;
     SD_Information info = 0;
 
+    HAL_Delay(1);
     /**
      * 100khz ~ 400khz로 클럭 낮추기
      * -----------------------------------------------------------------------
      * To ensure the proper operation of the SD card, the SD CLK signal should
      * have a frequency in the range of 100 to 400 kHz.
      */
-    hspi1.Init.BaudRatePrescaler =
-        SPI_BAUDRATEPRESCALER_256; /* 예: 24 MHz /256 ≈ 94 kHz */
-    HAL_SPI_Init(&hspi1);
+    // hspi1.Init.BaudRatePrescaler =
+    //     SPI_BAUDRATEPRESCALER_256; /* 예: 24 MHz /256 ≈ 94 kHz */
+    // HAL_SPI_Init(&hspi1);
 
     SD_PowerOn();
 
@@ -47,7 +46,7 @@ DSTATUS SD_Initialize(BYTE pdrv) {
 
     SD_Select();
     // CMD8 실행
-    res = SD_Send_Command(CMD8 | 0x40, 0x1AA);
+    res = SD_Send_Command(SD_CMD8, 0x1AA);
 
     if (res == 1) {
         // Check Voltage
@@ -56,19 +55,19 @@ DSTATUS SD_Initialize(BYTE pdrv) {
             Timer1 = 1000;
             do {
                 // CMD55 for Leading ACMD
-                res = SD_Send_Command(CMD55, 0);
+                res = SD_Send_Command(SD_CMD55, 0);
                 if (res != SD_RESPONSE_IN_IDLE_STATE) {
                     return status = STA_NOINIT;
                 }
                 // APP Init
-                res = SD_Send_Command(ACMD41, 1 << 30);
+                res = SD_Send_Command(SD_ACMD41, 1 << 30);
             } while (Timer1 && res != 0);
             if (!Timer1) {
                 return status = STA_NOINIT;
             }
 
             // Read OCR
-            res = SD_Send_Command(CMD58 | 0x40, 0);
+            res = SD_Send_Command(SD_CMD58, 0);
             if (res == 0) {
                 info = 0;
                 SD_SPI_ReceiveInformation(&info);
@@ -121,12 +120,12 @@ DSTATUS SD_Initialize(BYTE pdrv) {
      * is cleared (R1 resp changes 0x01 to 0x00).
      */
     do {
-        res = SD_Send_Command(CMD1, 0);
+        res = SD_Send_Command(SD_CMD1, 0);
     } while (res & SD_RESPONSE_IN_IDLE_STATE);
 
     if (sd_version == SD_TYPE_V2_BYTE_ADDRESS || sd_version == SD_TYPE_V1 ||
         sd_version == SD_TYPE_MMC_V3) {
-        res = SD_Send_Command(CMD16, 512);
+        res = SD_Send_Command(SD_CMD16, 512);
         if (res == 0) {
             // increate SPI Clock Speed...?
             hspi1.Init.BaudRatePrescaler =
@@ -143,10 +142,6 @@ DSTATUS SD_Initialize(BYTE pdrv) {
 
     return status;
 }
-
-DSTATUS SD_Status(BYTE pdrv) { return status; }
-
-SD_Version_Type SD_GetVersion() { return sd_version; }
 
 static void SD_PowerOn() {
     uint8_t res, dummy = 0xFF, n = 0xFF;
@@ -179,12 +174,12 @@ static void SD_PowerOn() {
      * the MISO line.
      */
     SD_Select();
-    SD_SPI_Send(CMD0 | 0x40);
+    SD_SPI_Send(SD_CMD0 | 0x40);
     SD_SPI_Send(0);
     SD_SPI_Send(0);
     SD_SPI_Send(0);
     SD_SPI_Send(0);
-    SD_SPI_Send(CMD0_CRC);
+    SD_SPI_Send(SD_CMD0_CRC);
 
     do {
         HAL_SPI_TransmitReceive(&hspi1, &dummy, &res, 1, SD_SPI_TIMEOUT_MS);
@@ -225,12 +220,12 @@ SD_Response SD_Send_Command(SD_Command_Type cmd, DWORD arg) {
      * CMD0, CMD8, CMD58의 경우 고정된 CRC값을 포함해야함. 나머지 명령어의 경우
      * 신경쓰지 않는다.
      */
-    if (cmd == CMD0) {
-        crc = CMD0_CRC;
-    } else if (cmd == CMD8) {
-        crc = CMD8_CRC;
-    } else if (cmd == CMD58) {
-        crc = CMD58_CRC;
+    if (cmd == SD_CMD0) {
+        crc = SD_CMD0_CRC;
+    } else if (cmd == SD_CMD8) {
+        crc = SD_CMD8_CRC;
+    } else if (cmd == SD_CMD58) {
+        crc = SD_CMD58_CRC;
     }
     /**
      * start bit(2) + cmd(6) + arg(32) + CRC(7) + stop bit(1)
@@ -277,6 +272,12 @@ SD_Response SD_Send_Command(SD_Command_Type cmd, DWORD arg) {
     return res;
 }
 
+static void SD_SPI_Send(BYTE data) {
+    while (HAL_SPI_GetState(&hspi1) != HAL_SPI_STATE_READY)
+        ;
+    HAL_SPI_Transmit(&hspi1, &data, 1, SD_SPI_TIMEOUT_MS);
+}
+
 static void SD_SPI_ReceiveInformation(SD_Information *info) {
     /**
      * CMD8과 CMD55의 경우 58비트 응답이 오므로, R1 응답을 제외한 32비트 응답을
@@ -293,12 +294,6 @@ static void SD_SPI_ReceiveInformation(SD_Information *info) {
     }
 }
 
-static void SD_SPI_Send(BYTE data) {
-    while (HAL_SPI_GetState(&hspi1) != HAL_SPI_STATE_READY)
-        ;
-    HAL_SPI_Transmit(&hspi1, &data, 1, SD_SPI_TIMEOUT_MS);
-}
-
 void SD_BusyWait() {
     Timer2 = 500;
     uint8_t res, dummy = 0xFF;
@@ -306,6 +301,10 @@ void SD_BusyWait() {
         HAL_SPI_TransmitReceive(&hspi1, &dummy, &res, 1, SD_SPI_TIMEOUT_MS);
     } while ((res != 0xFF) && Timer2);
 }
+
+DSTATUS SD_Status(BYTE pdrv) { return status; }
+
+SD_Version_Type SD_GetVersion() { return sd_version; }
 
 DSTATUS SD_ioctl(BYTE pdrv, BYTE cmd, void *buff) {
     SD_Response    r;
@@ -364,8 +363,8 @@ DSTATUS SD_ioctl(BYTE pdrv, BYTE cmd, void *buff) {
          * of volume/partition to be created.
          */
         SD_Select();
-        r = SD_Send_Command(CMD9, 0);
-        if (r != SD_RESPONSE_SUCCESS) {
+        r = SD_Send_Command(SD_CMD9, 0);
+        if (r != SD_RESPONSE_OK) {
             res = RES_ERROR;
         } else {
             // SD_SPI_ReceiveInformation(csd, 4);
@@ -434,7 +433,7 @@ DSTATUS SD_Read(BYTE pdrv, BYTE *buff, DWORD sector, UINT count) {
          */
         SD_Select();
 
-        res = SD_Send_Command(CMD17, addr);
+        res = SD_Send_Command(SD_CMD17, addr);
 
         if (res == 0) {
             /**
@@ -491,7 +490,7 @@ DSTATUS SD_Write(BYTE pdrv, const BYTE *buff, DWORD sector, UINT count) {
 
     SD_Select();
     if (count == 1) {
-        data_res = (SD_DataResponse)SD_Send_Command(CMD24, sector);
+        data_res = (SD_DataResponse)SD_Send_Command(SD_CMD24, sector);
 
         if (data_res == 0) {
             /**

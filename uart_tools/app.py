@@ -25,12 +25,12 @@ def get_key():
             termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
 def key_listener(ser, stop_event):
-    print("키를 누르면 해당 키(1바이트)를 즉시 전송합니다. '1' 키를 누르면 프로그램이 종료됩니다.")
+    print("키를 누르면 해당 키(1바이트)를 즉시 전송합니다. '`' 키를 누르면 프로그램이 종료됩니다.")
     while not stop_event.is_set():
         k = get_key()
         if not k:
             continue
-        if k == b'1':
+        if k == b'`':
             print("종료 키 '1' 입력 감지, 프로그램을 종료합니다.")
             stop_event.set()
             break

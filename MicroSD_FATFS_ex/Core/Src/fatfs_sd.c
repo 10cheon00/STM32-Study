@@ -1,6 +1,6 @@
 #include "fatfs_sd.h"
 
-static void SD_PowerOn();
+static bool SD_PowerOn();
 static void SD_Select();
 static void SD_Deselect();
 
@@ -37,7 +37,9 @@ DSTATUS SD_Initialize(BYTE pdrv) {
         SPI_BAUDRATEPRESCALER_256; /* 예: 24 MHz /256 ≈ 94 kHz */
     HAL_SPI_Init(&hspi1);
 
-    SD_PowerOn();
+    if (!SD_PowerOn()) {
+        return status = STA_NOINIT;
+    }
 
     /**
      * 이 이후로는 SD카드의 버전 탐색 및 초기화 로직 수행
@@ -144,7 +146,7 @@ DSTATUS SD_Initialize(BYTE pdrv) {
     return status;
 }
 
-static void SD_PowerOn() {
+static bool SD_PowerOn() {
     uint8_t res, dummy = 0xFF, n = 0xFF;
     /**
      * SD 카드를 SPI모드로 전환하기 위해 CS핀을 High로, MOSI라인도 High로
@@ -175,30 +177,23 @@ static void SD_PowerOn() {
      * the MISO line.
      */
     SD_Select();
-    SD_SPI_Send(SD_CMD0);
+    SD_SPI_Send(0x40);
     SD_SPI_Send(0);
     SD_SPI_Send(0);
     SD_SPI_Send(0);
     SD_SPI_Send(0);
-    SD_SPI_Send(SD_CMD0_CRC);
+    SD_SPI_Send(0x95);
 
     do {
         HAL_SPI_TransmitReceive(&hspi1, &dummy, &res, 1, SD_SPI_TIMEOUT_MS);
     } while ((res != 0x01) && --n);
 
     SD_Deselect();
-    /**
-     * MMC와 SDC가 각각 응답을 처리하는 타이밍이 달라서, 강제로 8비트 정도
-     * 출력을 해야 정상적으로 동작한다.
-     * (이 내용은 https://elm-chan.org/docs/mmc/mmc_e.html#spibus 여기서
-     * 찾았다.)
-     * -----------------------------------------------------------------------
-     * Right waveforms show the MISO line drive/release timing of the MMC/SDC
-     * (the DO signal is pulled to 1/2 vcc to see the bus state). Therefore to
-     * make MMC/SDC release the MISO line, the master device needs to send a
-     * byte after the CS signal is deasserted.
-     */
-    SD_SPI_Send(0xFF);
+    if (!n) {
+        return SD_ERROR;
+    }
+
+    return SD_OK;
 }
 
 static void SD_Select() {

@@ -2,7 +2,6 @@
 
 void LCD_Init()
 {
-    HAL_GPIO_WritePin(PSB_GPIO_Port, PSB_Pin, GPIO_PIN_RESET);
     HAL_GPIO_WritePin(XRST_GPIO_Port, XRST_Pin, GPIO_PIN_RESET);
     HAL_Delay(50);
     HAL_GPIO_WritePin(XRST_GPIO_Port, XRST_Pin, GPIO_PIN_SET);

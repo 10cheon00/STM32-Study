@@ -94,18 +94,7 @@ int main(void)
 
   LCD_SwitchToExtendedInstructionMode(true);
   LCD_GDRAM_Clear();
-  uint8_t x = 0, y = 0;
-  for (y = 0; y < 32; y++)
-  {
-    // 1) Y, X 좌표 설정
-    for (x = 0; x < 16; x++)
-    {
-      LCD_SendCmd(0x80 | (y & 0x3F));
-      LCD_SendCmd(0x80 | (x & 0x0F));
-      LCD_SendData(0x4E);
-      LCD_SendData(0xCF);
-    }
-  }
+  
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -115,6 +104,8 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    LCD_GDRAM_DrawBitmap(NULL);
+    HAL_Delay(1000);
   }
   /* USER CODE END 3 */
 }

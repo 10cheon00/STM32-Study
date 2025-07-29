@@ -73,18 +73,18 @@ void LCD_SwitchToBasicInstructionMode()
 
 void LCD_SwitchToExtendedInstructionMode(bool enableGraphicDisplay)
 {
-  LCD_SendCmd(0x24);
+  LCD_SendCmd(LCD_CMD_FUNCTION_SET |
+              LCD_FOUR_BIT_INTERFACE |
+              LCD_EXTENDED_INSTRUCTION);
   HAL_Delay(1);
-  LCD_SendCmd(0x26);
-  HAL_Delay(1);
-  // if (enableGraphicDisplay)
-  // {
-    // LCD_SendCmd(LCD_CMD_EX_FUNCTION_SET |
-    //             LCD_FOUR_BIT_INTERFACE |
-    //             LCD_EXTENDED_INSTRUCTION |
-    //             0x2);
-  //   HAL_Delay(1);
-  // }
+  if (enableGraphicDisplay)
+  {
+    LCD_SendCmd(LCD_CMD_FUNCTION_SET |
+                LCD_FOUR_BIT_INTERFACE |
+                LCD_EXTENDED_INSTRUCTION |
+                LCD_GRAPHIC_DISPLAY_ON);
+    HAL_Delay(1);
+  }
 }
 
 void LCD_GDRAM_Clear()
@@ -100,5 +100,31 @@ void LCD_GDRAM_Clear()
       LCD_SendData(0x00);
     }
   }
+}
 
+void LCD_GDRAM_SetCoord(uint8_t x, uint8_t y)
+{
+  LCD_SendCmd(0x80 | (y & 0x3F));
+  LCD_SendCmd(0x80 | (x & 0x0F));
+}
+
+/// @brief
+/// 128x64크기의 이미지를 한 번에 LCD 디스플레이에 그립니다.
+/// 이전에 그렸던 내용을 지우지 않고 그 위에 덮어씁니다.
+/// @param bitmap
+void LCD_GDRAM_DrawBitmap(uint8_t **bitmap)
+{
+  int x, y;
+  static int i = 0;
+  for (y = 0; y < 32; y++)
+  {
+    LCD_SendCmd(0x80 | (y & 0x3F));
+    LCD_SendCmd(0x80);
+    for (x = 0; x < 16; x++)
+    {
+      LCD_SendData(i);
+      LCD_SendData(i);
+    }
+    i++;
+  }
 }

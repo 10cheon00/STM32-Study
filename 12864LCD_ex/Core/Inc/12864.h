@@ -75,7 +75,12 @@ typedef enum
 {
     LCD_ENABLE_CGRAM_ADDRESS = 0x0,
     LCD_ENABLE_VERTICAL_SCROLL_POSITION = 0x1,
-} LCD_ScrollOrRamAddressSelectTypedef;
+} LCD_ScrollOrRamAddressSelectTypeDef;
+
+typedef enum {
+    LCD_GRAPHIC_DISPLAY_OFF = 0x0,
+    LCD_GRAPHIC_DISPLAY_ON = 0x2
+} LCD_ExtendedFunctionSetDef;
 
 void LCD_Init();
 void LCD_SPI_Send(uint8_t* msg);
@@ -86,4 +91,6 @@ void LCD_SwitchToBasicInstructionMode();
 void LCD_SwitchToExtendedInstructionMode(bool enableGraphicDisplay);
 
 void LCD_GDRAM_Clear();
+void LCD_GDRAM_SetCoord(uint8_t x, uint8_t y);
+void LCD_GDRAM_DrawBitmap(uint8_t ** map);
 #endif /* _12864_H_*/

@@ -59,8 +59,8 @@ void Error_Handler(void);
 /* Private defines -----------------------------------------------------------*/
 #define E_Pin GPIO_PIN_5
 #define E_GPIO_Port GPIOA
-#define RS_Pin GPIO_PIN_6
-#define RS_GPIO_Port GPIOA
+#define CS_Pin GPIO_PIN_6
+#define CS_GPIO_Port GPIOA
 #define RW_Pin GPIO_PIN_7
 #define RW_GPIO_Port GPIOA
 #define XRST_Pin GPIO_PIN_6

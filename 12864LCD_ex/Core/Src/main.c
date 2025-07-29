@@ -91,27 +91,30 @@ int main(void)
   MX_SPI1_Init();
   /* USER CODE BEGIN 2 */
   LCD_Init();
+
+  LCD_SwitchToExtendedInstructionMode(true);
+  LCD_GDRAM_Clear();
+  uint8_t x = 0, y = 0;
+  for (y = 0; y < 32; y++)
+  {
+    // 1) Y, X 좌표 설정
+    for (x = 0; x < 16; x++)
+    {
+      LCD_SendCmd(0x80 | (y & 0x3F));
+      LCD_SendCmd(0x80 | (x & 0x0F));
+      LCD_SendData(0x4E);
+      LCD_SendData(0xCF);
+    }
+  }
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  // int i = 0;
-  // LCD_SPI_Send(
-  //     LCD_CMD_SET_COORD,
-  //     RS_INSTRUCTION,
-  //     RW_WRITE,
-  //     0x84);
   while (1)
   {
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    LCD_SPI_Send(
-        0,
-        RS_DATA,
-        RW_WRITE,
-        'a');
-    HAL_Delay(100);
   }
   /* USER CODE END 3 */
 }
@@ -175,10 +178,10 @@ static void MX_SPI1_Init(void)
   /* SPI1 parameter configuration*/
   hspi1.Instance = SPI1;
   hspi1.Init.Mode = SPI_MODE_MASTER;
-  hspi1.Init.Direction = SPI_DIRECTION_2LINES;
+  hspi1.Init.Direction = SPI_DIRECTION_1LINE;
   hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
   hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
-  hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
+  hspi1.Init.CLKPhase = SPI_PHASE_2EDGE;
   hspi1.Init.NSS = SPI_NSS_SOFT;
   hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_2;
   hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
@@ -212,17 +215,17 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(RS_GPIO_Port, RS_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(CS_GPIO_Port, CS_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(XRST_GPIO_Port, XRST_Pin, GPIO_PIN_RESET);
 
-  /*Configure GPIO pin : RS_Pin */
-  GPIO_InitStruct.Pin = RS_Pin;
+  /*Configure GPIO pin : CS_Pin */
+  GPIO_InitStruct.Pin = CS_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(RS_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(CS_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : XRST_Pin */
   GPIO_InitStruct.Pin = XRST_Pin;

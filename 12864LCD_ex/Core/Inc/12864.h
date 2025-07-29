@@ -1,6 +1,8 @@
 #ifndef _12864_H_
 #define _12864_H_
 
+#include <stdbool.h>
+
 #include "stm32f4xx.h"
 
 #include "main.h"
@@ -15,7 +17,12 @@ typedef enum
     LCD_CMD_DISPLAY_CTRL = 0x08,
     LCD_CMD_CURSOR_DISPLAY_SHIFT_CTRL = 0x10,
     LCD_CMD_FUNCTION_SET = 0x20,
-    LCD_CMD_SET_COORD = 0x80,
+    LCD_CMD_SET_DDRAM_ADDRESS = 0x80,
+    LCD_CMD_WRITE = 0x00,
+    LCD_CMD_EX_SCROLL_OR_RAM_ADDRESS_SELECT = 0x02,
+    LCD_CMD_EX_REVERSE = 0x04,
+    LCD_CMD_EX_FUNCTION_SET = 0x20,
+    LCD_CMD_EX_SET_GDRAM_ADDRESS = 0x80
 } LCD_CommandTypedef;
 
 typedef enum
@@ -29,6 +36,14 @@ typedef enum
     RW_WRITE = 0,
     RW_READ,
 } LCD_RWTypedef;
+
+typedef enum
+{
+    LCD_BASIC_INSTRUCTION = 0x0,
+    LCD_EXTENDED_INSTRUCTION = 0x4,
+    LCD_EIGHT_BIT_INTERFACE = 0x10,
+    LCD_FOUR_BIT_INTERFACE = 0x00,
+} LCD_FunctionSetTypeDef;
 
 typedef enum
 {
@@ -56,7 +71,19 @@ typedef enum
     LCD_ENTRY_MODE_DISPLAY_SHIFT_LEFT = 0x1,
 } LCD_EntryModeSetTypeDef;
 
-void LCD_Init();
-void LCD_SPI_Send(LCD_CommandTypedef cmd, LCD_RSTypedef rs, LCD_RWTypedef rw, uint8_t data);
+typedef enum
+{
+    LCD_ENABLE_CGRAM_ADDRESS = 0x0,
+    LCD_ENABLE_VERTICAL_SCROLL_POSITION = 0x1,
+} LCD_ScrollOrRamAddressSelectTypedef;
 
+void LCD_Init();
+void LCD_SPI_Send(uint8_t* msg);
+void LCD_SendCmd(LCD_CommandTypedef cmd);
+void LCD_SendData(uint8_t data);
+
+void LCD_SwitchToBasicInstructionMode();
+void LCD_SwitchToExtendedInstructionMode(bool enableGraphicDisplay);
+
+void LCD_GDRAM_Clear();
 #endif /* _12864_H_*/

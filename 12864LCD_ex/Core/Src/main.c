@@ -94,7 +94,17 @@ int main(void)
 
   LCD_SwitchToExtendedInstructionMode(true);
   LCD_GDRAM_Clear();
-  
+  uint8_t bitmap[64][16];
+  for(int i=0;i<64;i++) {
+    for(int j=0;j<16; j++) {
+      if (i%2) {
+        bitmap[i][j] = 0xF0;
+      } else {
+        bitmap[i][j] = 0x0F;
+      }
+    }
+  }
+  LCD_GDRAM_DrawBitmap(bitmap);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -104,7 +114,6 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    LCD_GDRAM_DrawBitmap(NULL);
     HAL_Delay(1000);
   }
   /* USER CODE END 3 */

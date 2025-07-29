@@ -112,19 +112,25 @@ void LCD_GDRAM_SetCoord(uint8_t x, uint8_t y)
 /// 128x64크기의 이미지를 한 번에 LCD 디스플레이에 그립니다.
 /// 이전에 그렸던 내용을 지우지 않고 그 위에 덮어씁니다.
 /// @param bitmap
-void LCD_GDRAM_DrawBitmap(uint8_t **bitmap)
+void LCD_GDRAM_DrawBitmap(uint8_t (*bitmap)[LEN_Y][LEN_X_SCALED])
 {
   int x, y;
-  static int i = 0;
-  for (y = 0; y < 32; y++)
+  for (y = 0; y < LEN_Y / 2; y++)
   {
-    LCD_SendCmd(0x80 | (y & 0x3F));
-    LCD_SendCmd(0x80);
-    for (x = 0; x < 16; x++)
+    LCD_GDRAM_SetCoord(0, y);
+    for (x = 0; x < LEN_X_SCALED; x += 2)
     {
-      LCD_SendData(i);
-      LCD_SendData(i);
+      LCD_SendData((*bitmap)[y][x]);
+      LCD_SendData((*bitmap)[y][x + 1]);
     }
-    i++;
+  }
+  for (y = 0; y < LEN_Y / 2; y++)
+  {
+    LCD_GDRAM_SetCoord(8, y);
+    for (x = 0; x < LEN_X_SCALED; x += 2)
+    {
+      LCD_SendData((*bitmap)[y][x]);
+      LCD_SendData((*bitmap)[y][x + 1]);
+    }
   }
 }

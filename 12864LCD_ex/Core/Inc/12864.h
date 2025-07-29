@@ -82,6 +82,10 @@ typedef enum {
     LCD_GRAPHIC_DISPLAY_ON = 0x2
 } LCD_ExtendedFunctionSetDef;
 
+#define LEN_X 128
+#define LEN_Y 64
+#define LEN_X_SCALED LEN_X / 8
+
 void LCD_Init();
 void LCD_SPI_Send(uint8_t* msg);
 void LCD_SendCmd(LCD_CommandTypedef cmd);
@@ -92,5 +96,5 @@ void LCD_SwitchToExtendedInstructionMode(bool enableGraphicDisplay);
 
 void LCD_GDRAM_Clear();
 void LCD_GDRAM_SetCoord(uint8_t x, uint8_t y);
-void LCD_GDRAM_DrawBitmap(uint8_t ** map);
+void LCD_GDRAM_DrawBitmap(uint8_t (*bitmap)[LEN_Y][LEN_X_SCALED]);
 #endif /* _12864_H_*/

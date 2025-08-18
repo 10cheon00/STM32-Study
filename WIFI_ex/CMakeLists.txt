@@ -48,6 +48,8 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 # Add sources to executable
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user sources here
+    ${CMAKE_SOURCE_DIR}/Core/Src/wifi.c
+    ${CMAKE_SOURCE_DIR}/Core/Src/variable_arg.c
 )
 
 # Add include paths

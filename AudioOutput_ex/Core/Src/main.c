@@ -22,6 +22,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <math.h>
+#include "uda1334a.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -31,12 +32,9 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define I2S_SAMPLE_RATE   44100       // 48 kHz
-#define TONE_HZ           880.00f       // A4 (원하면 바꾸세요)
-#define TABLE_LEN         256U         // 사인 테이블 길이
-#define AMP               24000        // 16-bit 범위 내 적당한 진폭(클리핑 여유)
-#define STEREO            2
-
+#define ADC1_CHANNEL_SIZE 2
+#define ADC1_SAMPLES_PER_CHANNEL 64
+#define ADC1_BUFFER_SIZE ADC1_CHANNEL_SIZE * ADC1_SAMPLES_PER_CHANNEL
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -45,16 +43,20 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+ADC_HandleTypeDef hadc1;
+DMA_HandleTypeDef hdma_adc1;
+
 I2S_HandleTypeDef hi2s1;
 DMA_HandleTypeDef hdma_spi1_tx;
 
 /* USER CODE BEGIN PV */
-static int16_t sine_table[TABLE_LEN];
-/* 스테레오 인터리브 버퍼(좌,우,좌,우,...) */
-static int16_t tx_buf[TABLE_LEN * STEREO];
-/* DDS 상태 */
-static volatile uint32_t phase_q16 = 0;   // Q16.16
-static volatile uint32_t step_q16  = 0;   // Q16.16
+// static int16_t sine_table[TABLE_LEN];
+// /* 스테레오 인터리브 버퍼(좌,우,좌,우,...) */
+// static int16_t tx_buf[TABLE_LEN * STEREO];
+
+int16_t* tx_buf;
+
+volatile uint16_t adc_buf[ADC1_BUFFER_SIZE];
 
 /* USER CODE END PV */
 
@@ -63,37 +65,30 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_DMA_Init(void);
 static void MX_I2S1_Init(void);
+static void MX_ADC1_Init(void);
 /* USER CODE BEGIN PFP */
 
+// [0]CH0, [1]CH1, [2]CH0, [3]CH1, [4]CH0, [5]CH1 ... 순으로 저장되어 있음
+// 
+static inline uint16_t getAdcValue(uint8_t channel_idx){
+    uint32_t ndtr = __HAL_DMA_GET_COUNTER(&hdma_adc1); // 남은 전송 수
+    uint32_t pos  = (ADC1_BUFFER_SIZE - ndtr) % ADC1_BUFFER_SIZE; // 현재 쓰기가 일어날 위치
+    uint32_t dma_frame = (pos / ADC1_CHANNEL_SIZE) * ADC1_CHANNEL_SIZE; // 현재 dma 프레임?(ch0, ch1)에서 첫 인덱스
+    uint32_t base = (dma_frame - ADC1_CHANNEL_SIZE + ADC1_BUFFER_SIZE) % ADC1_BUFFER_SIZE; // 이전 dma 프레임의 첫 인덱스
+    return adc_buf[base + channel_idx];
+}
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-/* --- 256 포인트 사인 테이블 생성 --- */
-static void build_sine_table(void)
-{
-  for (uint32_t n = 0; n < TABLE_LEN; n++) {
-    float phase = 2.0f * (float)M_PI * ((float)n / (float)TABLE_LEN);
-    /* 기본 1주기 테이블 */
-    int32_t s = (int32_t)lroundf(AMP * sinf(phase));
-    sine_table[n] = (int16_t)s;
-  }
+
+void HAL_I2S_TxCpltCallback(I2S_HandleTypeDef *hi2s) {
+    float actual;
+    uint32_t adc_tone = getAdcValue(0);
+    uint32_t adc_volume = getAdcValue(1);
+    UDA_BuildFrameFromADC(adc_tone, adc_volume, 1, &actual);
 }
 
-/* --- 원하는 주파수(TONE_HZ)로 스테레오 인터리브 --- */
-static void build_stereo_from_table(void)
-{
-  const float Fs = 44100.0f;         // <- 지금 I2S가 44.1k라서 여기를 맞춤
-  const uint32_t N = TABLE_LEN;      // 256
-  uint32_t K = (uint32_t)lroundf(TONE_HZ * N / Fs);   // 버퍼당 정수 사이클
-  for (uint32_t n = 0; n < N; n++) {
-    // 테이블 직접 걷지 말고, 정수배 위치로 샘플링(경계 연속 보장)
-    uint32_t i = (uint32_t)((uint64_t)K * n) & (N - 1); // N=2^m 가정
-    int16_t s = sine_table[i];
-    tx_buf[2*n + 0] = s;  // L
-    tx_buf[2*n + 1] = s;  // R
-  }
-}
 /* USER CODE END 0 */
 
 /**
@@ -127,9 +122,16 @@ int main(void)
   MX_GPIO_Init();
   MX_DMA_Init();
   MX_I2S1_Init();
+  MX_ADC1_Init();
   /* USER CODE BEGIN 2 */
-  build_sine_table();
-  build_stereo_from_table();
+  /* ADC1 DMA 연속 시작: 길이=1 로 변수 계속 갱신 */
+  HAL_ADC_Start_DMA(&hadc1, (uint32_t*)&adc_buf, ADC1_BUFFER_SIZE);
+  __HAL_DMA_DISABLE_IT(&hdma_adc1, DMA_IT_HT | DMA_IT_TC);
+
+  float actual;
+  tx_buf = UDA_BuildSineTable();
+  UDA_BuildFrameFromADC(TONE_HZ, 4096, 1, &actual);
+
 
   /* DMA 순환 송신: tx_buf의 half-word 개수를 넘깁니다.  */
   if (HAL_I2S_Transmit_DMA(&hi2s1, (uint16_t*)tx_buf, TABLE_LEN * STEREO) != HAL_OK) {
@@ -200,6 +202,67 @@ void SystemClock_Config(void)
 }
 
 /**
+  * @brief ADC1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_ADC1_Init(void)
+{
+
+  /* USER CODE BEGIN ADC1_Init 0 */
+
+  /* USER CODE END ADC1_Init 0 */
+
+  ADC_ChannelConfTypeDef sConfig = {0};
+
+  /* USER CODE BEGIN ADC1_Init 1 */
+
+  /* USER CODE END ADC1_Init 1 */
+
+  /** Configure the global features of the ADC (Clock, Resolution, Data Alignment and number of conversion)
+  */
+  hadc1.Instance = ADC1;
+  hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV2;
+  hadc1.Init.Resolution = ADC_RESOLUTION_12B;
+  hadc1.Init.ScanConvMode = ENABLE;
+  hadc1.Init.ContinuousConvMode = ENABLE;
+  hadc1.Init.DiscontinuousConvMode = DISABLE;
+  hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
+  hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
+  hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
+  hadc1.Init.NbrOfConversion = 2;
+  hadc1.Init.DMAContinuousRequests = ENABLE;
+  hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
+  if (HAL_ADC_Init(&hadc1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time.
+  */
+  sConfig.Channel = ADC_CHANNEL_0;
+  sConfig.Rank = 1;
+  sConfig.SamplingTime = ADC_SAMPLETIME_84CYCLES;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time.
+  */
+  sConfig.Channel = ADC_CHANNEL_1;
+  sConfig.Rank = 2;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN ADC1_Init 2 */
+
+  /* USER CODE END ADC1_Init 2 */
+
+}
+
+/**
   * @brief I2S1 Initialization Function
   * @param None
   * @retval None
@@ -243,6 +306,9 @@ static void MX_DMA_Init(void)
   __HAL_RCC_DMA2_CLK_ENABLE();
 
   /* DMA interrupt init */
+  /* DMA2_Stream0_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA2_Stream0_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA2_Stream0_IRQn);
   /* DMA2_Stream3_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA2_Stream3_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA2_Stream3_IRQn);

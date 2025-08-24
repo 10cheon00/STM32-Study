@@ -1,20 +1,20 @@
 /* USER CODE BEGIN Header */
 /**
-  ******************************************************************************
-  * @file           : main.c
-  * @brief          : Main program body
-  ******************************************************************************
-  * @attention
-  *
-  * Copyright (c) 2025 STMicroelectronics.
-  * All rights reserved.
-  *
-  * This software is licensed under terms that can be found in the LICENSE file
-  * in the root directory of this software component.
-  * If no LICENSE file comes with this software, it is provided AS-IS.
-  *
-  ******************************************************************************
-  */
+ ******************************************************************************
+ * @file           : main.c
+ * @brief          : Main program body
+ ******************************************************************************
+ * @attention
+ *
+ * Copyright (c) 2025 STMicroelectronics.
+ * All rights reserved.
+ *
+ * This software is licensed under terms that can be found in the LICENSE file
+ * in the root directory of this software component.
+ * If no LICENSE file comes with this software, it is provided AS-IS.
+ *
+ ******************************************************************************
+ */
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
@@ -22,6 +22,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <math.h>
+
 #include "uda1334a.h"
 /* USER CODE END Includes */
 
@@ -34,7 +35,7 @@
 /* USER CODE BEGIN PD */
 #define ADC1_CHANNEL_SIZE 2
 #define ADC1_SAMPLES_PER_CHANNEL 64
-#define ADC1_BUFFER_SIZE ADC1_CHANNEL_SIZE * ADC1_SAMPLES_PER_CHANNEL
+#define ADC1_BUFFER_SIZE ADC1_CHANNEL_SIZE* ADC1_SAMPLES_PER_CHANNEL
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -57,36 +58,41 @@ DMA_HandleTypeDef hdma_spi1_tx;
 int16_t* tx_buf;
 
 volatile uint16_t adc_buf[ADC1_BUFFER_SIZE];
-
+float tone;
+float volume;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_DMA_Init(void);
-static void MX_I2S1_Init(void);
 static void MX_ADC1_Init(void);
+static void MX_I2S1_Init(void);
 /* USER CODE BEGIN PFP */
 
 // [0]CH0, [1]CH1, [2]CH0, [3]CH1, [4]CH0, [5]CH1 ... 순으로 저장되어 있음
-// 
-static inline uint16_t getAdcValue(uint8_t channel_idx){
-    uint32_t ndtr = __HAL_DMA_GET_COUNTER(&hdma_adc1); // 남은 전송 수
-    uint32_t pos  = (ADC1_BUFFER_SIZE - ndtr) % ADC1_BUFFER_SIZE; // 현재 쓰기가 일어날 위치
-    uint32_t dma_frame = (pos / ADC1_CHANNEL_SIZE) * ADC1_CHANNEL_SIZE; // 현재 dma 프레임?(ch0, ch1)에서 첫 인덱스
-    uint32_t base = (dma_frame - ADC1_CHANNEL_SIZE + ADC1_BUFFER_SIZE) % ADC1_BUFFER_SIZE; // 이전 dma 프레임의 첫 인덱스
-    return adc_buf[base + channel_idx];
+//
+static inline uint16_t getADC1Value(uint8_t channel_idx) {
+  uint32_t ndtr = __HAL_DMA_GET_COUNTER(&hdma_adc1);  // 남은 전송 수
+  uint32_t pos =
+      (ADC1_BUFFER_SIZE - ndtr) % ADC1_BUFFER_SIZE;  // 현재 쓰기가 일어날 위치
+  uint32_t dma_frame =
+      (pos / ADC1_CHANNEL_SIZE) *
+      ADC1_CHANNEL_SIZE;  // 현재 dma 프레임?(ch0, ch1)에서 첫 인덱스
+  uint32_t base = (dma_frame - ADC1_CHANNEL_SIZE + ADC1_BUFFER_SIZE) %
+                  ADC1_BUFFER_SIZE;  // 이전 dma 프레임의 첫 인덱스
+  return adc_buf[base + channel_idx];
 }
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+void HAL_I2S_TxHalfCpltCallback(I2S_HandleTypeDef* hi2s) {
+  UDA_FillHalf(&tx_buf[0]);
+}
 
-void HAL_I2S_TxCpltCallback(I2S_HandleTypeDef *hi2s) {
-    float actual;
-    uint32_t adc_tone = getAdcValue(0);
-    uint32_t adc_volume = getAdcValue(1);
-    UDA_BuildFrameFromADC(adc_tone, adc_volume, 1, &actual);
+void HAL_I2S_TxCpltCallback(I2S_HandleTypeDef* hi2s) {
+  UDA_FillHalf(&tx_buf[FRAMES_PER_HALF * STEREO]);
 }
 
 /* USER CODE END 0 */
@@ -121,32 +127,39 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_DMA_Init();
-  MX_I2S1_Init();
   MX_ADC1_Init();
+  MX_I2S1_Init();
   /* USER CODE BEGIN 2 */
   /* ADC1 DMA 연속 시작: 길이=1 로 변수 계속 갱신 */
   HAL_ADC_Start_DMA(&hadc1, (uint32_t*)&adc_buf, ADC1_BUFFER_SIZE);
   __HAL_DMA_DISABLE_IT(&hdma_adc1, DMA_IT_HT | DMA_IT_TC);
 
-  float actual;
   tx_buf = UDA_BuildSineTable();
-  UDA_BuildFrameFromADC(TONE_HZ, 4096, 1, &actual);
-
+  UDA_SetToneByADC(0);
+  UDA_FillHalf(&tx_buf[0]);                           // 1st half
+  UDA_FillHalf(&tx_buf[FRAMES_PER_HALF*STEREO]);        // 2nd half
+  UDA_SetVolumeByADC(2048);  
 
   /* DMA 순환 송신: tx_buf의 half-word 개수를 넘깁니다.  */
-  if (HAL_I2S_Transmit_DMA(&hi2s1, (uint16_t*)tx_buf, TABLE_LEN * STEREO) != HAL_OK) {
+  if (HAL_I2S_Transmit_DMA(&hi2s1, (uint16_t*)tx_buf, FRAMES_PER_HALF * STEREO * 2) !=
+      HAL_OK) {
     Error_Handler();
   }
-
+  int i = 0;
+  uint32_t lastTick = 0;
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  while (1)
-  {
+  while (1) {
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    if (HAL_GetTick() - lastTick > 100) {
+      tone = UDA_SetToneByADC(getADC1Value(0));
+      volume = UDA_SetVolumeByADC(getADC1Value(1));
+      lastTick = HAL_GetTick();
+    }
   }
   /* USER CODE END 3 */
 }
@@ -160,14 +173,6 @@ void SystemClock_Config(void)
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
 
-  /** Macro to configure the PLL multiplication factor
-  */
-  __HAL_RCC_PLL_PLLM_CONFIG(16);
-
-  /** Macro to configure the PLL clock source
-  */
-  __HAL_RCC_PLL_PLLSOURCE_CONFIG(RCC_PLLSOURCE_HSI);
-
   /** Configure the main internal regulator output voltage
   */
   __HAL_RCC_PWR_CLK_ENABLE();
@@ -179,8 +184,13 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
   RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
-  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_NONE;
+  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
+  RCC_OscInitStruct.PLL.PLLM = 8;
+  RCC_OscInitStruct.PLL.PLLN = 50;
+  RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
+  RCC_OscInitStruct.PLL.PLLQ = 2;
+  RCC_OscInitStruct.PLL.PLLR = 7;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
     Error_Handler();
@@ -190,12 +200,12 @@ void SystemClock_Config(void)
   */
   RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
                               |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
-  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_HSI;
+  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
-  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
+  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
   RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
 
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_0) != HAL_OK)
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_1) != HAL_OK)
   {
     Error_Handler();
   }
@@ -280,7 +290,7 @@ static void MX_I2S1_Init(void)
   hi2s1.Instance = SPI1;
   hi2s1.Init.Mode = I2S_MODE_MASTER_TX;
   hi2s1.Init.Standard = I2S_STANDARD_PHILIPS;
-  hi2s1.Init.DataFormat = I2S_DATAFORMAT_16B;
+  hi2s1.Init.DataFormat = I2S_DATAFORMAT_16B_EXTENDED;
   hi2s1.Init.MCLKOutput = I2S_MCLKOUTPUT_DISABLE;
   hi2s1.Init.AudioFreq = I2S_AUDIOFREQ_44K;
   hi2s1.Init.CPOL = I2S_CPOL_LOW;
@@ -347,8 +357,7 @@ void Error_Handler(void)
   /* USER CODE BEGIN Error_Handler_Debug */
   /* User can add his own implementation to report the HAL error return state */
   __disable_irq();
-  while (1)
-  {
+  while (1) {
   }
   /* USER CODE END Error_Handler_Debug */
 }
@@ -364,8 +373,9 @@ void Error_Handler(void)
 void assert_failed(uint8_t *file, uint32_t line)
 {
   /* USER CODE BEGIN 6 */
-  /* User can add his own implementation to report the file name and line number,
-     ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
+  /* User can add his own implementation to report the file name and line
+     number, ex: printf("Wrong parameters value: file %s on line %d\r\n", file,
+     line) */
   /* USER CODE END 6 */
 }
 #endif /* USE_FULL_ASSERT */

@@ -2,62 +2,69 @@
 
 #include <math.h>
 
-static int16_t sine_table[TABLE_LEN];
-/* 스테레오 인터리브 버퍼(좌,우,좌,우,...) */
-static int16_t tx_buf[TABLE_LEN * STEREO];
-/* 전역/정적 상태 */
-static uint32_t g_gain_q15 = 0;  // 0..32767
+// 상위 16비트를 정수로, 하위 16비트를 소수로 활용 Q16.16
+
+#define FRAC 16
+#define Q16(X) \
+  (X * (float)(1 << FRAC))  // X를 Q16의 정수 영역에 들어가도록 만들기
+
+static int16_t sine_table[SINE_TABLE_LEN + 1];  // 보간을 위해 1024번째 값을 추가
+static int16_t tx_buf[FRAMES_PER_HALF * STEREO * 2];
+
+static float freq;
+static float volume;
+static uint32_t phase;
+static uint32_t step;
 
 // 0부터 2pi만큼의 사인파를 테이블 길이만큼 잘라 테이블 구성
 int16_t* UDA_BuildSineTable(void) {
-  for (uint32_t n = 0; n < TABLE_LEN; n++) {
-    float ph = 2.0f * (float)M_PI * (float)n / (float)TABLE_LEN;
-    sine_table[n] = (int16_t)lroundf(AMP * sinf(ph));
+  for (uint32_t n = 0; n < SINE_TABLE_LEN; n++) {
+    float ph = 2.0f * (float)M_PI * ((float)n / (float)SINE_TABLE_LEN);
+    sine_table[n] = (int16_t)lroundf(sinf(ph) * AMP);
   }
+  sine_table[SINE_TABLE_LEN] = sine_table[0];
+  phase = 0;
   return tx_buf;
 }
 
-/* ---- ADC → 주파수 매핑 ---- */
-static inline float map_adc_to_freq(uint16_t adc12, int log_scale) {
-  float x = (float)adc12 / 4095.0f;  // 0..1
-  if (log_scale) {
-    /* 옥타브 느낌의 로그 매핑(권장) */
-    return UDA_FMIN_HZ * powf(UDA_FMAX_HZ / UDA_FMIN_HZ, x);
-  } else {
-    /* 선형 매핑 */
-    return UDA_FMIN_HZ + (UDA_FMAX_HZ - UDA_FMIN_HZ) * x;
+int16_t calculateSampleOut(uint32_t* phase, uint32_t step) {
+  // 위상 이동
+	*phase += step;
+	*phase &= (((uint32_t)SINE_TABLE_LEN << FRAC) - 1);
+  
+	// 샘플값 선형 보간
+	const uint32_t index = (*phase) >> FRAC;
+	int16_t v1 = sine_table[index];
+	int16_t v2 = sine_table[index+1];
+  uint32_t frac = (*phase) & 0xFFFF;
+  int32_t out = ( v1 * (int32_t)(0x10000 - frac) + v2 * (int32_t)frac ) >> FRAC;
+
+  // 샘플값 클리핑
+	if (out > 32767) out = 32767;
+	if (out < -32768) out = -32768;
+
+	return (int16_t)out;
+}
+
+void UDA_FillHalf(int16_t* buf) {
+  if (step < 1) step = 1;
+  for (int i = 0; i < FRAMES_PER_HALF; i++) {
+    int16_t s = calculateSampleOut(&phase, step) * volume;
+    /* Left channel */
+    buf[STEREO * i + 0] = s;
+    /* Right channel */
+    buf[STEREO * i + 1] = s;
   }
 }
 
-static inline float map_adc_to_volume(uint16_t adc12) {
-  float x = (float)adc12 / 4095.0f;  // 0..1
-  float dB = -60.0f + 60.0f * x;     // -60..0 dB
-  return powf(10.0f, dB / 20.0f);    // 0.001..1.0
+float UDA_SetToneByADC(uint16_t adc_tone) {
+  uint16_t note = ((float)adc_tone / 4096.0f) * 12 * 4;
+  freq = 110.0f * powf(2, (float)note / 12);
+  step = (uint32_t)lroundf((freq * (float)SINE_TABLE_LEN / (float)SAMPLE_RATE) * 65536.0f);
+  return freq;
 }
 
-/* ---- ADC값으로 톤 선택 → 경계 연속 프레임 생성 ---- */
-void UDA_BuildFrameFromADC(uint16_t adc12, uint16_t adc_volume, int log_scale,
-                           float* out_freq_actual) {
-  const float Fs = (float)I2S_SAMPLE_RATE;  // 예: 44100
-  const uint32_t N = (uint32_t)TABLE_LEN;   // 예: 256(=2^m 권장)
-  const float f = 440.0f;                   // 고정 톤
-
-  /* 버퍼 경계 연속: N프레임에 K사이클이 정확히 들어가게 양자화 */
-  uint32_t K = (uint32_t)lroundf(f * (float)N / Fs);
-  if (K == 0) K = 1;
-  if (K >= N) K = N - 1;
-
-  /* 실제 재생 주파수(양자화 후) 리포트 */
-  if (out_freq_actual) {
-    *out_freq_actual = ((float)K * Fs) / (float)N;
-  }
-
-  /* 프레임 채우기 (L,R 인터리브). 테이블 진폭(AMP) 그대로 사용 */
-  for (uint32_t n = 0; n < N; n++) {
-    // N이 2^m이면 & (N-1), 아니면 % N 사용
-    uint32_t i = (uint32_t)((uint64_t)K * n) & (N - 1);
-    int16_t s = sine_table[i];  // build_sine_table()로 미리 생성된 값
-    tx_buf[2 * n + 0] = s;      // Left
-    tx_buf[2 * n + 1] = s;      // Right
-  }
+float UDA_SetVolumeByADC(uint16_t adc_volume) {
+  volume = ((float)adc_volume / 4096.0f);
+  return volume;
 }

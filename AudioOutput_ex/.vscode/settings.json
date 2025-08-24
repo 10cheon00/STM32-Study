@@ -1,5 +1,7 @@
 {
     "files.associations": {
-        "cstdlib": "c"
-    }
+        "cstdlib": "c",
+        "compare": "c"
+    },
+    "cortex-debug.variableUseNaturalFormat": false
 }

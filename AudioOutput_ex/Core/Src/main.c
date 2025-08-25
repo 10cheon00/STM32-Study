@@ -51,15 +51,9 @@ I2S_HandleTypeDef hi2s1;
 DMA_HandleTypeDef hdma_spi1_tx;
 
 /* USER CODE BEGIN PV */
-// static int16_t sine_table[TABLE_LEN];
-// /* 스테레오 인터리브 버퍼(좌,우,좌,우,...) */
-// static int16_t tx_buf[TABLE_LEN * STEREO];
-
 int16_t* tx_buf;
 
 volatile uint16_t adc_buf[ADC1_BUFFER_SIZE];
-float tone;
-float volume;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -71,7 +65,6 @@ static void MX_I2S1_Init(void);
 /* USER CODE BEGIN PFP */
 
 // [0]CH0, [1]CH1, [2]CH0, [3]CH1, [4]CH0, [5]CH1 ... 순으로 저장되어 있음
-//
 static inline uint16_t getADC1Value(uint8_t channel_idx) {
   uint32_t ndtr = __HAL_DMA_GET_COUNTER(&hdma_adc1);  // 남은 전송 수
   uint32_t pos =
@@ -134,18 +127,14 @@ int main(void)
   HAL_ADC_Start_DMA(&hadc1, (uint32_t*)&adc_buf, ADC1_BUFFER_SIZE);
   __HAL_DMA_DISABLE_IT(&hdma_adc1, DMA_IT_HT | DMA_IT_TC);
 
-  tx_buf = UDA_BuildSineTable();
-  UDA_SetToneByADC(0);
-  UDA_FillHalf(&tx_buf[0]);                           // 1st half
-  UDA_FillHalf(&tx_buf[FRAMES_PER_HALF*STEREO]);        // 2nd half
-  UDA_SetVolumeByADC(2048);  
-
+  tx_buf = UDA_Init();
+  
   /* DMA 순환 송신: tx_buf의 half-word 개수를 넘깁니다.  */
   if (HAL_I2S_Transmit_DMA(&hi2s1, (uint16_t*)tx_buf, FRAMES_PER_HALF * STEREO * 2) !=
       HAL_OK) {
     Error_Handler();
   }
-  int i = 0;
+
   uint32_t lastTick = 0;
   /* USER CODE END 2 */
 
@@ -156,8 +145,8 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
     if (HAL_GetTick() - lastTick > 100) {
-      tone = UDA_SetToneByADC(getADC1Value(0));
-      volume = UDA_SetVolumeByADC(getADC1Value(1));
+      UDA_SetToneByADC(getADC1Value(0));
+      UDA_SetVolumeByADC(getADC1Value(1));
       lastTick = HAL_GetTick();
     }
   }

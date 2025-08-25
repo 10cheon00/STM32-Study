@@ -3,12 +3,11 @@
 #include <math.h>
 
 // 상위 16비트를 정수로, 하위 16비트를 소수로 활용 Q16.16
-
 #define FRAC 16
 #define Q16(X) \
   (X * (float)(1 << FRAC))  // X를 Q16의 정수 영역에 들어가도록 만들기
 
-static int16_t sine_table[SINE_TABLE_LEN + 1];  // 보간을 위해 1024번째 값을 추가
+static int16_t sine_table[SINE_TABLE_LEN + 1];  // 보간을 위해 1칸을 추가
 static int16_t tx_buf[FRAMES_PER_HALF * STEREO * 2];
 
 static float freq;
@@ -16,8 +15,18 @@ static float volume;
 static uint32_t phase;
 static uint32_t step;
 
+int16_t* UDA_Init() { 
+  UDA_BuildSineTable();
+  UDA_SetToneByADC(TONE_HZ);
+  UDA_SetVolumeByADC(2048);
+  UDA_FillHalf(&tx_buf[0]);
+  UDA_FillHalf(&tx_buf[FRAMES_PER_HALF*STEREO]);
+
+  return tx_buf;
+ }
+
 // 0부터 2pi만큼의 사인파를 테이블 길이만큼 잘라 테이블 구성
-int16_t* UDA_BuildSineTable(void) {
+void UDA_BuildSineTable(void) {
   for (uint32_t n = 0; n < SINE_TABLE_LEN; n++) {
     float ph = 2.0f * (float)M_PI * ((float)n / (float)SINE_TABLE_LEN);
     sine_table[n] = (int16_t)lroundf(sinf(ph) * AMP);
@@ -57,14 +66,12 @@ void UDA_FillHalf(int16_t* buf) {
   }
 }
 
-float UDA_SetToneByADC(uint16_t adc_tone) {
-  uint16_t note = ((float)adc_tone / 4096.0f) * 12 * 4;
-  freq = 110.0f * powf(2, (float)note / 12);
+void UDA_SetToneByADC(uint16_t adc_tone) {
+  uint16_t note = ((float)adc_tone / 4096.0f) * 12;
+  freq = TONE_HZ * powf(2, (float)note / 12);
   step = (uint32_t)lroundf((freq * (float)SINE_TABLE_LEN / (float)SAMPLE_RATE) * 65536.0f);
-  return freq;
 }
 
-float UDA_SetVolumeByADC(uint16_t adc_volume) {
+void UDA_SetVolumeByADC(uint16_t adc_volume) {
   volume = ((float)adc_volume / 4096.0f);
-  return volume;
 }

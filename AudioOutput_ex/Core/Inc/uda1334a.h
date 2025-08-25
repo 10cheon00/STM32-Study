@@ -9,9 +9,11 @@
 #define STEREO 2
 #define BIT_DEPTH 16
 #define AMP 8000  // 16-bit 범위 내 적당한 진폭(클리핑 여유)
+#define TONE_HZ 1000.0f
 
-int16_t* UDA_BuildSineTable(void);
+int16_t* UDA_Init();
+void UDA_BuildSineTable(void);
 void UDA_FillHalf(int16_t* buf);
-float UDA_SetToneByADC(uint16_t adc_tone);
-float UDA_SetVolumeByADC(uint16_t adc_volume);
+void UDA_SetToneByADC(uint16_t adc_tone);
+void UDA_SetVolumeByADC(uint16_t adc_volume);
 #endif

@@ -5,7 +5,7 @@
 
 #include "stm32f4xx.h"
 
-#define MAX_COMMAND_LEN 512
+#define MAX_COMMAND_LEN 1024
 
 typedef enum {
   AT = 0,

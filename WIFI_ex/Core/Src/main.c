@@ -74,6 +74,7 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
     // esp8266의 응답 결과를 가공하여 그대로 사용자에게 전송
     if (huart->RxEventType == HAL_UART_RXEVENT_IDLE) {
       // DMA가 모든 응답을 받아왔을 때에 처리
+      wifi.responseLen = Size;
       WIFI_ProcessRx(&wifi);
       HAL_UART_Transmit_DMA(&huart2, wifi.response, Size);
     }
@@ -131,15 +132,19 @@ int main(void) {
   MX_USART1_UART_Init();
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
-  HAL_Delay(1000);
   HAL_UARTEx_ReceiveToIdle_DMA(&huart2, buffer, MAX_COMMAND_LEN);
   __HAL_DMA_DISABLE_IT(&hdma_usart2_rx, DMA_IT_HT);
   __HAL_DMA_DISABLE_IT(&hdma_usart2_tx, DMA_IT_HT);
-  wifi.huart = &huart1;
-  wifi.timeoutTickAmount = 1000;
 
-  WIFI_Init(&wifi);
-  WIFI_AT(&wifi);
+  Arg AT_CWMODE_CUR_arg = I(1);
+  WIFI_ATCommandSignatureTypeDef commandQueue[4] = {
+      {AT, 0, NULL},
+      {ATE0, 0, NULL},
+      {AT_CWLAP, 0, NULL},
+      {AT_CWMODE_CUR, 1, &AT_CWMODE_CUR_arg}};
+
+  WIFI_Init(&wifi, &huart1, 5000, commandQueue, 4);
+  HAL_Delay(1000);
   /* USER CODE END 2 */
 
   /* Infinite loop */

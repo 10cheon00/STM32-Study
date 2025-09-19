@@ -9,7 +9,6 @@
 //  무릎)
 uint16_t process_block_to_pcm(int16_t* out, const uint16_t* in,
                                      uint16_t N) {
-#if RAW_MODE
   // ---- RAW 모드: 목소리 확인 최우선 ----
   // 12-bit(0..4095) → mid 제거 → 16-bit로 확장(<<4 ≒ ×16)하면 다소 큼 → ×8
   // 수준으로 맞춤 지터 없이 듣고자 살짝 낮춰서 ×8 사용
@@ -21,38 +20,6 @@ uint16_t process_block_to_pcm(int16_t* out, const uint16_t* in,
     out[i] = (int16_t)v;
   }
   return N;
-
-#else
-  // ---- 음질 개선 모드: HPF + 소프트 리미팅 ----
-  const float HPF_ALPHA = 0.9742f;  // ≈ exp(-2π*50/12000)
-  const float PRE_GAIN = 4.0f;      // 보수적 스케일
-  const float LIM_T = 20000.0f;     // 무릎 시작점(헤드룸)
-  const float LIM_SLOPE = 0.25f;    // 무릎 이후 기울기(0~1)
-
-  float y_prev = hpf_y;
-  float xprev = x_prev;
-
-  for (uint16_t i = 0; i < N; i++) {
-    float xc = (float)in[i] - 2048.0f;            // mid-bias 제거
-    float y = HPF_ALPHA * (y_prev + xc - xprev);  // 1차 HPF
-    xprev = xc;
-    y_prev = y;
-
-    float s = y * PRE_GAIN;
-
-    // 소프트 리미팅
-    float ab = (s >= 0.f) ? s : -s;
-    if (ab > LIM_T) {
-      float over = ab - LIM_T;
-      ab = LIM_T + over * LIM_SLOPE;
-      s = (s >= 0.f) ? ab : -ab;
-    }
-    out[i] = sat16f(s);
-  }
-  hpf_y = y_prev;
-  x_prev = xprev;
-  return N;
-#endif
 }
 
 void uart_send_frame(const int16_t* pcm, uint16_t N) {

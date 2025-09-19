@@ -2,16 +2,14 @@
 
 #include <math.h>
 
-// 상위 16비트를 정수로, 하위 16비트를 소수로 활용 Q16.16
-#define FRAC 16
-#define Q16(X) \
-  (X * (float)(1 << FRAC))  // X를 Q16의 정수 영역에 들어가도록 만들기
-
 static int16_t sine_table[SINE_TABLE_LEN + 1];  // 보간을 위해 1칸을 추가
 static int16_t tx_buf[FRAMES_PER_HALF * STEREO * 2];
 
 static float freq;
 static float volume;
+
+// 상위 16비트를 정수로, 하위 16비트를 소수로 활용 = Q16.16
+#define FRAC 16
 static uint32_t phase;
 static uint32_t step;
 
